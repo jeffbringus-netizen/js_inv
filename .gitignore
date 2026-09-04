@@ -1,0 +1,9 @@
+node_modules/
+backups/
+data/
+
+*.xlsx
+*.db
+*.db-wal
+*.db-shm
+server.log

@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inventory</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <button id="menuToggle" class="btn btn-light" type="button" aria-label="Toggle navigation" aria-expanded="true" title="Toggle navigation">
+    <i class="bi bi-list"></i>
+  </button>
+  <aside id="sideMenu" aria-label="Main navigation">
+    <div class="sidebar-title">Inventory</div>
+    <nav id="mainTabs" class="nav flex-column">
+      <button class="nav-link active" data-view="products" type="button"><i class="bi bi-box-seam"></i> Products</button>
+      <button class="nav-link" data-view="sales" type="button"><i class="bi bi-cart-check"></i> Sales</button>
+      <button class="nav-link" data-view="purchases" type="button"><i class="bi bi-bag-check"></i> Purchases</button>
+      <button class="nav-link" data-view="locations" type="button"><i class="bi bi-geo-alt"></i> Locations</button>
+      <button class="nav-link" data-view="devices" type="button"><i class="bi bi-phone"></i> Devices</button>
+      <button class="nav-link" data-view="categories" type="button"><i class="bi bi-tags"></i> Categories</button>
+      <button class="nav-link" data-view="brands" type="button"><i class="bi bi-bookmark"></i> Brands</button>
+      <button class="nav-link" data-view="suppliers" type="button"><i class="bi bi-truck"></i> Suppliers</button>
+      <button class="nav-link" data-view="features" type="button"><i class="bi bi-stars"></i> Features</button>
+      <div class="nav-divider" role="separator"><span>Administration</span></div>
+      <button class="nav-link" data-view="backups" type="button"><i class="bi bi-archive"></i> Backups</button>
+      <button class="nav-link" data-view="history" type="button"><i class="bi bi-clock-history"></i> History</button>
+      <button class="nav-link" data-view="webstock" type="button"><i class="bi bi-file-earmark-spreadsheet"></i> Webstock</button>
+      <button class="nav-link" data-view="labels" type="button"><i class="bi bi-tags"></i> Labels</button>
+    </nav>
+  </aside>
+
+  <div id="appContent" class="container-fluid px-4 py-3">
+
+    <!-- ============ PRODUCTS VIEW ============ -->
+    <div id="productsView">
+      <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+        <h4 class="mb-0">Products</h4>
+        <div class="d-flex gap-2 align-items-center">
+          <label class="archive-toggle" for="showArchived" title="Show archived products" aria-label="Show archived products">
+            <input id="showArchived" type="checkbox">
+            <i class="bi bi-archive"></i>
+          </label>
+          <label class="column-toggle" for="showMargin" title="Show margin column" aria-label="Show margin column">
+            <input id="showMargin" type="checkbox">
+            <i class="bi bi-percent"></i>
+          </label>
+          <div class="input-group" style="width: 320px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input id="searchInput" class="form-control" type="text" placeholder="Search products..." autocomplete="off">
+            <button id="clearSearch" class="btn btn-outline-secondary" type="button" title="Clear search" hidden>
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+          <button id="newSaleBtn" class="btn btn-success"><i class="bi bi-cart-plus"></i> New sale</button>
+          <button id="addProductBtn" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Add product</button>
+          <button id="massEditBtn" class="btn btn-warning" disabled><i class="bi bi-pencil-square"></i> Edit products</button>
+        </div>
+      </div>
+
+      <div id="activeFilters" class="mb-2"></div>
+
+      <div class="table-responsive">
+        <div id="productPaginationTop"></div>
+        <table class="table table-hover align-middle" id="productTable">
+          <thead>
+            <tr>
+              <th style="width: 36px;"><input class="form-check-input" type="checkbox" id="checkAllProducts" title="Select all"></th>
+              <th data-sort="location" class="sortable text-center">Location</th>
+              <th data-sort="model" class="sortable text-center">Model</th>
+              <th data-sort="name" class="sortable">Name</th>
+              <th data-sort="category" class="sortable">Category</th>
+              <th data-sort="brand" class="sortable">Brand</th>
+              <th class="sortable" data-sort="sku">Codes</th>
+              <th>Features</th>
+              <th data-sort="color" class="sortable text-center">Color</th>
+              <th data-sort="quantity" class="sortable text-center">Qty</th>
+              <th data-sort="price" class="sortable">Price</th>
+              <th data-sort="margin" class="sortable">Margin</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="productRows"></tbody>
+        </table>
+        <div id="productPaginationBottom"></div>
+      </div>
+    </div>
+
+    <!-- ============ SALE ORDERS VIEW ============ -->
+    <div id="ordersView" class="d-none">
+      <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+        <h4 class="mb-0">Sales</h4>
+        <button id="newSaleBtn2" class="btn btn-success"><i class="bi bi-cart-plus"></i> New sale</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>Items</th>
+              <th>Total</th>
+              <th>Created</th>
+              <th style="width: 120px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="orderRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ PURCHASES VIEW ============ -->
+    <div id="purchasesView" class="d-none">
+      <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+        <h4 class="mb-0">Purchases</h4>
+        <button id="importOrderBtn" class="btn btn-primary"><i class="bi bi-file-earmark-arrow-down"></i> Import order</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Supplier</th>
+              <th>Items</th>
+              <th>Products</th>
+              <th>Shipping</th>
+              <th>Total</th>
+              <th>Created</th>
+              <th style="width: 70px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="purchaseRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ ENTITIES VIEW (locations/devices/categories/brands/features) ============ -->
+    <div id="entitiesView" class="d-none">
+      <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+        <h4 class="mb-0" id="entityTitle">Devices</h4>
+        <div class="d-flex gap-2 align-items-center">
+          <div class="input-group" style="width: 320px;">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input id="entitySearch" class="form-control" type="text" placeholder="Search..." autocomplete="off">
+            <button id="entitySearchClear" class="btn btn-outline-secondary" type="button" title="Clear search" hidden>
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+          <button id="entityCreateBtn" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Create new</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <div id="entityPaginationTop"></div>
+        <table class="table table-hover align-middle">
+          <thead id="entityTableHead"></thead>
+          <tbody id="entityRows"></tbody>
+        </table>
+        <div id="entityPaginationBottom"></div>
+      </div>
+    </div>
+
+    <!-- ============ HISTORY VIEW ============ -->
+    <div id="historyView" class="d-none">
+      <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+        <h4 class="mb-0">History</h4>
+        <select id="historyFilter" class="form-select" style="width: 220px;">
+          <option value="all">All</option>
+          <option value="products">Products</option>
+          <option value="sales">Sales</option>
+          <option value="purchases">Purchases</option>
+          <option value="devices">Devices</option>
+          <option value="features">Features</option>
+          <option value="brands">Brands</option>
+          <option value="suppliers">Suppliers</option>
+          <option value="categories">Categories</option>
+          <option value="locations">Locations</option>
+          <option value="backups">Backups</option>
+        </select>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th style="width: 180px;">Type</th>
+              <th style="width: 170px;">Date</th>
+              <th>Change</th>
+              <th style="width: 70px;"></th>
+            </tr>
+          </thead>
+          <tbody id="historyRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ BACKUPS VIEW ============ -->
+    <div id="backupsView" class="d-none">
+      <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+        <h4 class="mb-0">Backups</h4>
+        <button id="createBackupBtn" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Create backup now</button>
+      </div>
+      <p class="text-muted small">A backup is created automatically on app start and once a day when data has changed. The newest 14 backups are kept.</p>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th style="width: 190px;">Created</th>
+              <th style="width: 120px;">Size</th>
+              <th style="width: 170px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="backupRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ WEBSTOCK ADMIN TOOL ============ -->
+    <div id="webstockView" class="d-none container-xl">
+      <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+        <h4 class="mb-0">Webstock</h4>
+        <span class="text-muted small">Compare a webstore CSV with products in this database</span>
+      </div>
+      <div class="admin-tool-panel">
+        <div class="webstock-sql sql-editor" aria-label="Webstock CSV export query">
+          <button id="copyWebstockExportSqlBtn" class="sql-copy-btn" type="button">📋 Copy SQL</button>
+          <pre><code id="webstockExportSqlCode">SELECT
+    p.product_id,
+    p.model,
+    p.quantity,
+    p.status,
+    pd.name
+FROM oc_product AS p
+INNER JOIN oc_product_description AS pd
+    ON p.product_id = pd.product_id
+WHERE pd.language_id = 1
+    AND p.model &gt;= 1000
+GROUP BY
+    p.product_id,
+    p.model,
+    p.quantity,
+    p.status,
+    pd.name
+ORDER BY p.model;</code></pre>
+        </div>
+        <div class="webstock-upload drop-zone" id="webstockUploadZone">
+          <i class="bi bi-filetype-csv fs-2 text-primary"></i>
+          <span class="file-label">Import webstore CSV</span>
+          <span class="text-muted small">Click to choose the CSV export used for comparison</span>
+          <span id="webstockCsvName" class="file-name"></span>
+          <input id="webstockCsvInput" type="file" accept=".csv,.txt" hidden>
+        </div>
+        <button id="compareWebstockBtn" class="btn btn-primary w-100 mt-3" type="button" disabled>
+          <i class="bi bi-arrow-left-right"></i> Compare CSV &amp; Generate SQL
+        </button>
+        <div id="webstockError" class="alert alert-danger py-2 mt-3" hidden></div>
+      </div>
+      <div id="webstockResults" class="admin-tool-panel mt-3" hidden>
+        <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+          <h5 class="mb-0">Comparison results <span id="webstockResultCount" class="badge text-bg-secondary">0</span></h5>
+          <span id="webstockSummary" class="text-muted small"></span>
+        </div>
+        <h6>Products in Webstock but not in database <span id="webstockMissingCount" class="badge text-bg-warning">0</span></h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-4">
+            <thead>
+              <tr><th class="webstock-center">ID</th><th class="webstock-center">Model</th><th>Product</th><th class="webstock-center">WEB</th></tr>
+            </thead>
+            <tbody id="webstockMissingRows"></tbody>
+          </table>
+        </div>
+        <h6>Products with different stock quantities <span id="webstockDifferenceCount" class="badge text-bg-danger">0</span></h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle">
+            <thead>
+              <tr><th class="webstock-center">ID</th><th class="webstock-center">Model</th><th>Product</th><th class="webstock-center">DB</th><th class="webstock-center">WEB</th><th class="webstock-center">Update</th></tr>
+            </thead>
+            <tbody id="webstockDifferenceRows"></tbody>
+          </table>
+        </div>
+        <div class="webstock-sql mt-3">
+          <button id="copyWebstockSqlBtn" class="sql-copy-btn" type="button" disabled>📋 Copy SQL</button>
+          <pre class="mb-0"><code id="webstockSqlCode">-- Compare a CSV to generate SQL updates.</code></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ LABELS ADMIN TOOL ============ -->
+    <div id="labelsView" class="d-none container-xl">
+      <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+        <h4 class="mb-0">Labels</h4>
+        <span class="text-muted small">Generate product labels from inventory data</span>
+      </div>
+      <div class="admin-tool-panel">
+        <label class="form-label" for="labelsLinkTemplate">Link URL</label>
+        <input id="labelsLinkTemplate" class="form-control" type="text" value="https://example.com/model/*">
+        <div class="form-text mb-3">Use * where the product model should be inserted.</div>
+        <div class="form-check mb-3">
+          <input id="includeOutOfStock" class="form-check-input" type="checkbox">
+          <label class="form-check-label" for="includeOutOfStock">Include out of stock</label>
+        </div>
+        <button id="generateLabelsBtn" class="btn btn-primary w-100 mt-3" type="button">
+          <i class="bi bi-file-earmark-spreadsheet"></i> Generate labels XLSX
+        </button>
+        <span id="labelsStatus" class="text-muted small ms-2" aria-live="polite"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add/Edit product modal -->
+  <div class="modal fade" id="productModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div class="d-flex gap-2 align-items-center me-3">
+            <label class="column-toggle modal-status-toggle online-toggle" for="modalOnlineToggle" title="Online" aria-label="Online">
+              <input id="modalOnlineToggle" type="checkbox">
+              <i class="bi bi-cloud"></i>
+            </label>
+            <label class="archive-toggle modal-status-toggle" for="modalArchivedToggle" title="Archived" aria-label="Archived">
+              <input id="modalArchivedToggle" type="checkbox">
+              <i class="bi bi-archive"></i>
+            </label>
+          </div>
+          <h5 class="modal-title" id="modalTitle">Add product</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="productForm" class="row g-3">
+            <div class="modal-error alert alert-danger py-2 col-12" hidden></div>
+            <fieldset class="col-12 product-field-group">
+              <legend>Product details</legend>
+              <div class="row g-3">
+                <div class="col-md-4 f-single">
+                  <label class="form-label">Model</label>
+                  <input name="model" class="form-control" autocomplete="off">
+                </div>
+                <div class="col-md-4 f-single">
+                  <label class="form-label">SKU *</label>
+                  <input name="sku" class="form-control" required autocomplete="off">
+                </div>
+                <div class="col-md-4 f-single">
+                  <label class="form-label">EAN</label>
+                  <input name="ean" class="form-control" autocomplete="off">
+                </div>
+                <div class="col-12 f-single">
+                  <label class="form-label">Name *</label>
+                  <input name="name" class="form-control" required autocomplete="off">
+                </div>
+                <div class="col-md-4" data-ac="categories"></div>
+                <div class="col-md-4" data-ac="brands"></div>
+                <div class="col-md-4 f-single">
+                  <label class="form-label">Color *</label>
+                  <input name="color" class="form-control" required autocomplete="off">
+                </div>
+              </div>
+            </fieldset>
+            <fieldset class="col-12 product-field-group">
+              <legend>Stock and pricing</legend>
+              <div class="row g-3">
+                <div class="col-lg-3 col-md-4">
+                  <label class="form-label">Quantity *</label>
+                  <input name="quantity" type="number" min="0" step="1" class="form-control" required>
+                </div>
+                <div class="col-lg-3 col-md-4">
+                  <label class="form-label">Price (€, incl. VAT) *</label>
+                  <input name="price" type="number" min="0" step="0.01" class="form-control" required>
+                </div>
+                <div class="col-lg-3 col-md-4">
+                  <label class="form-label">Cost (€, excl. VAT) *</label>
+                  <input name="cost" type="number" min="0" step="0.01" class="form-control" required>
+                </div>
+              </div>
+            </fieldset>
+            <fieldset class="col-12 product-field-group">
+              <legend>Extra</legend>
+              <div class="row g-3">
+                <div class="col-md-4" data-ac="locations"></div>
+                <div class="col-md-4" data-ac="devices"></div>
+                <div class="col-md-4" data-ac="features"></div>
+                <input type="checkbox" name="is_online" class="d-none">
+                <input type="checkbox" name="is_archived" class="d-none">
+              </div>
+            </fieldset>
+            <fieldset class="col-12 product-field-group">
+              <legend>Supplier</legend>
+              <div class="row g-3">
+                <div class="col-md-6" data-ac="suppliers"></div>
+                <div class="col-md-6 f-single">
+                  <label class="form-label">Supplier's product name</label>
+                  <input name="supplier_name" class="form-control" autocomplete="off">
+                </div>
+              </div>
+            </fieldset>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" id="saveProductBtn" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sale / order modal -->
+  <div class="modal fade" id="saleModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="saleModalTitle">New sale</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Customer</label>
+            <input id="saleCustomer" class="form-control" autocomplete="off">
+          </div>
+          <div class="sale-search-wrap mb-3" id="saleSearchWrap">
+            <div class="input-group input-group-lg">
+              <span class="input-group-text"><i class="bi bi-upc-scan"></i></span>
+              <input id="saleSearch" class="form-control" placeholder="Search or scan product (name, SKU, EAN, model)..." autocomplete="off">
+            </div>
+            <div id="saleResults" class="ac-list text-start d-none"></div>
+          </div>
+          <div id="saleError" class="alert alert-danger py-2" hidden></div>
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Product</th>
+                <th style="width: 150px;">Qty</th>
+                <th>Price</th>
+                <th>Line total</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="saleItems"></tbody>
+          </table>
+          <div class="text-end fw-bold fs-5">Total: <span id="saleTotal" class="text-success">€ 0.00</span></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="button" id="saleSaveDraftBtn" class="btn btn-outline-primary">Save draft</button>
+          <button type="button" id="saleCompleteBtn" class="btn btn-success"><i class="bi bi-check-lg"></i> Complete sale</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import purchase order modal -->
+  <div class="modal fade" id="importModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Import purchase order</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="importError" class="alert alert-danger py-2 mb-3" hidden></div>
+          <div class="row g-3 mb-3">
+            <div class="col-md-5"><div id="importSupplierAc"></div></div>
+            <div class="col-md-3">
+              <label class="form-label">Shipping (€)</label>
+              <input id="importShipping" type="number" min="0" step="0.01" class="form-control">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Importer</label>
+              <select id="importerSelect" class="form-select">
+                <option value="KOFF">KOFF</option>
+              </select>
+            </div>
+          </div>
+          <div id="xlsxDrop" class="xlsxDrop mb-3">
+            <i class="bi bi-file-earmark-excel" style="font-size:1.6rem;"></i>
+            <div>Click or drop the supplier's <strong>.xlsx</strong> purchase order here</div>
+          </div>
+          <input id="xlsxInput" type="file" accept=".xlsx" hidden>
+          <div id="importProgress" class="text-center py-3" hidden>
+            <div class="spinner-border text-primary" role="status"></div>
+            <div class="mt-2" id="importProgressText">Parsing file…</div>
+          </div>
+          <div id="importExistingWrap" hidden>
+            <h6 class="mt-2">Existing products <span class="text-muted small">(quantity will be updated)</span></h6>
+            <div class="table-responsive">
+              <table class="table table-sm table-bordered align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width:36px;"></th>
+                    <th>Product</th>
+                    <th>Supplier's product name</th>
+                    <th>EAN</th>
+                    <th>Cost</th>
+                    <th>Quantity</th>
+                  </tr>
+                </thead>
+                <tbody id="importExistingRows"></tbody>
+              </table>
+            </div>
+          </div>
+          <div id="importNewWrap" hidden>
+            <h6 class="mt-3">New products <span class="text-muted small">(click <i class="bi bi-pencil"></i> to edit each product before import; green rows are already updated)</span></h6>
+            <div class="table-responsive">
+              <table class="table table-hover table-sm align-middle import-new-table">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width:36px;"></th>
+                    <th>Model</th>
+                    <th>Name</th>
+                    <th>Codes</th>
+                    <th>Category</th>
+                    <th>Brand</th>
+                    <th>Color</th>
+                    <th>Qty</th>
+                    <th>Price</th>
+                    <th>Cost</th>
+                    <th style="width:60px;"></th>
+                  </tr>
+                </thead>
+                <tbody id="importNewRows"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="button" id="completeImportBtn" class="btn btn-success" disabled>
+            <i class="bi bi-check-lg"></i> Complete order
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mass edit modal -->
+  <div class="modal fade" id="massEditModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="massEditTitle">Edit products</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <!-- step 1: choose field -->
+          <div id="massChoose">
+            <p class="text-muted small">Choose what you want to change for the selected <span id="massChooseCount"></span> products:</p>
+            <nav class="nav flex-column mass-field-nav">
+              <button class="nav-link mass-field-btn" data-field="color" type="button"><i class="bi bi-palette"></i> Color</button>
+              <button class="nav-link mass-field-btn" data-field="quantity" type="button"><i class="bi bi-123"></i> Quantity</button>
+              <button class="nav-link mass-field-btn" data-field="cost" type="button"><i class="bi bi-currency-euro"></i> Purchase price</button>
+              <button class="nav-link mass-field-btn" data-field="price" type="button"><i class="bi bi-tag"></i> Sale price</button>
+              <button class="nav-link mass-field-btn" data-field="is_online" type="button"><i class="bi bi-globe"></i> Online</button>
+              <button class="nav-link mass-field-btn" data-field="is_archived" type="button"><i class="bi bi-archive"></i> Archived</button>
+              <button class="nav-link mass-field-btn" data-field="category_id" type="button"><i class="bi bi-tags"></i> Category</button>
+              <button class="nav-link mass-field-btn" data-field="brand_id" type="button"><i class="bi bi-bookmark"></i> Brand</button>
+              <button class="nav-link mass-field-btn" data-field="supplier_id" type="button"><i class="bi bi-truck"></i> Supplier</button>
+              <button class="nav-link mass-field-btn" data-field="location_id" type="button"><i class="bi bi-geo-alt"></i> Location</button>
+              <button class="nav-link mass-field-btn" data-field="devices" type="button"><i class="bi bi-phone"></i> Devices</button>
+              <button class="nav-link mass-field-btn" data-field="features" type="button"><i class="bi bi-stars"></i> Features</button>
+            </nav>
+          </div>
+          <!-- step 2: edit chosen field -->
+          <div id="massEditStep" class="d-none">
+            <button id="massBackBtn" class="btn btn-sm btn-outline-secondary mb-3"><i class="bi bi-arrow-left"></i> Choose another field</button>
+            <div id="massEditorArea" class="mb-3"></div>
+            <h6>Selected products <span class="text-muted small">(current value and what will change)</span></h6>
+            <div class="table-responsive">
+              <table class="table table-sm table-hover align-middle">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Product</th>
+                    <th>Codes</th>
+                    <th id="massValueHeader"></th>
+                  </tr>
+                </thead>
+                <tbody id="massProductRows"></tbody>
+              </table>
+            </div>
+            <div id="massError" class="text-danger small" hidden></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" id="massSaveBtn" class="btn btn-outline-primary d-none">Save</button>
+          <button type="button" id="massSaveCloseBtn" class="btn btn-primary d-none">Save and close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Restore confirm modal -->
+  <div class="modal fade" id="restoreModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Restore backup</h5>
+        </div>
+        <div class="modal-body" id="restoreMsg"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" id="confirmRestoreBtn" class="btn btn-danger">Restore and restart</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- History info modal -->
+  <div class="modal fade" id="historyInfoModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="historyInfoTitle">Change</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="historyInfoBody"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Entity linked products modal -->
+  <div class="modal fade" id="entityProductsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="entityProductsTitle">Products</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <table class="table table-sm table-hover align-middle">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Product</th>
+                <th>Codes</th>
+                <th>Qty</th>
+                <th style="width: 60px;"></th>
+              </tr>
+            </thead>
+            <tbody id="entityProductsRows"></tbody>
+          </table>
+          <div id="entityProductsEmpty" class="text-muted text-center py-3" hidden>No linked products.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Entity create/edit modal -->
+  <div class="modal fade" id="entityModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="entityModalTitle">Create</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="entityForm" class="row g-3"></form>
+          <div id="entityError" class="text-danger small mt-2" hidden></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" id="saveEntityBtn" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete confirm modal -->
+  <div class="modal fade" id="confirmDeleteModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Confirm delete</h5>
+        </div>
+        <div class="modal-body" id="confirmDeleteMsg"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" id="confirmDeleteBtn" class="btn btn-danger">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Brand price conflict modal -->
+  <div class="modal fade" id="brandPriceModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Brand default price</h5>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2">These new brands have products with different sale prices. Pick which price to use as the brand's suggested sale price:</p>
+          <div id="brandPriceBody"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="brandPriceContinue" class="btn btn-primary">Continue import</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Purchase order info modal -->
+  <div class="modal fade" id="purchaseInfoModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="purchaseInfoTitle">Purchase order</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="purchaseInfoMeta" class="mb-3"></div>
+          <table class="table table-sm table-hover align-middle">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Codes</th>
+                <th>Qty</th>
+                <th>Cost</th>
+                <th>Line total</th>
+              </tr>
+            </thead>
+            <tbody id="purchaseInfoRows"></tbody>
+          </table>
+          <div class="text-end fs-5">
+            <div>Products: <span id="purchaseInfoProducts" class="fw-bold"></span></div>
+            <div>Shipping: <span id="purchaseInfoShipping"></span></div>
+            <div class="fw-bold text-success">Total: <span id="purchaseInfoTotal"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import product edit modal -->
+  <div class="modal fade" id="importProductModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="importProductTitle">Edit import product</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="importProductForm" class="row g-3">
+            <div id="ipfWarning" class="alert alert-danger py-2 col-12" hidden></div>
+            <fieldset class="col-12 product-field-group">
+              <legend>Product details</legend>
+              <div class="row g-3">
+                <div class="col-md-4">
+                  <label class="form-label">Model</label>
+                  <input name="model" class="form-control" autocomplete="off">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">SKU *</label>
+                  <input name="sku" class="form-control" required autocomplete="off">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">EAN</label>
+                  <input name="ean" class="form-control" autocomplete="off">
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Name *</label>
+                  <input name="name" class="form-control" required autocomplete="off">
+                </div>
+                <div class="col-md-4"><div id="ipfCategory"></div></div>
+                <div class="col-md-4"><div id="ipfBrand"></div></div>
+                <div class="col-md-4">
+                  <label class="form-label">Color *</label>
+                  <input name="color" class="form-control" required autocomplete="off">
+                </div>
+              </div>
+            </fieldset>
+            <fieldset class="col-12 product-field-group">
+              <legend>Stock and pricing</legend>
+              <div class="row g-3">
+                <div class="col-lg-3 col-md-4">
+                  <label class="form-label">Quantity *</label>
+                  <input name="quantity" type="number" min="1" step="1" class="form-control" required>
+                </div>
+                <div class="col-lg-3 col-md-4">
+                  <label class="form-label">Price (€, incl. VAT) *</label>
+                  <input name="price" type="number" min="0" step="0.01" class="form-control" required>
+                </div>
+                <div class="col-lg-3 col-md-4">
+                  <label class="form-label">Cost (€, excl. VAT) *</label>
+                  <input name="cost" type="number" min="0" step="0.01" class="form-control" required>
+                </div>
+              </div>
+            </fieldset>
+            <fieldset class="col-12 product-field-group">
+              <legend>Extra</legend>
+              <div class="row g-3">
+                <div class="col-md-4"><div id="ipfLocation"></div></div>
+                <div class="col-md-4"><div id="ipfDevices"></div></div>
+                <div class="col-md-4"><div id="ipfFeatures"></div></div>
+              </div>
+            </fieldset>
+            <fieldset class="col-12 product-field-group">
+              <legend>Supplier</legend>
+              <label class="form-label">Supplier's product name</label>
+              <input name="supplier_name" class="form-control" autocomplete="off">
+            </fieldset>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" id="saveImportProductBtn" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

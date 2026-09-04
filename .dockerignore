@@ -1,0 +1,13 @@
+node_modules
+backups
+data
+*.db
+*.db-wal
+*.db-shm
+*.xlsx
+server.log
+.git
+.github
+Dockerfile
+docker-compose.yml
+.dockerignore

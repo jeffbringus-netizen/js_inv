@@ -1,0 +1,22 @@
+services:
+  inventory:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: js-inv
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      NODE_ENV: production
+      IS_DOCKER: "1"
+      PORT: "3000"
+      LOG_TIMEZONE: ${LOG_TIMEZONE:-Europe/Sofia}
+      DB_PATH: /app/data/inventory.db
+      BACKUP_DIR: /app/backups
+
+    volumes:
+      - ./data:/app/data
+      - ./backups:/app/backups
