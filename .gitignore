@@ -3,6 +3,7 @@ backups/
 data/
 
 *.xlsx
+*.csv
 *.db
 *.db-wal
 *.db-shm

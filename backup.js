@@ -15,7 +15,8 @@ const LAST_ID_KEY = 'last_backup_history_id';
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
 const safeName = name => {
-  if (!/^inventory-backup-\d{4}-\d{2}-\d{2}_\d{6}\.db$/.test(name)) return null;
+  if (!/^(?:auto|manual)-\d{4}-\d{2}-\d{2}_\d{6}\.db$/.test(name) &&
+      !/^inventory-backup-\d{4}-\d{2}-\d{2}_\d{6}\.db$/.test(name)) return null;
   return name;
 };
 
@@ -51,7 +52,8 @@ function createBackup(kind) {
 
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
-  const name = `inventory-backup-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.db`;
+  const prefix = kind.startsWith('auto') ? 'auto' : 'manual';
+  const name = `${prefix}-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.db`;
   const dest = path.join(BACKUP_DIR, name);
 
   return new Promise((resolve, reject) => {
