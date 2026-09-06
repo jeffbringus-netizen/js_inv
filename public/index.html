@@ -24,6 +24,7 @@
       <button class="nav-link" data-view="brands" type="button"><i class="bi bi-bookmark"></i> Brands</button>
       <button class="nav-link" data-view="suppliers" type="button"><i class="bi bi-truck"></i> Suppliers</button>
       <button class="nav-link" data-view="features" type="button"><i class="bi bi-stars"></i> Features</button>
+      <button class="nav-link" data-view="colors" type="button"><i class="bi bi-palette"></i> Colors</button>
       <div class="nav-divider" role="separator"><span>Administration</span></div>
       <button class="nav-link" data-view="backups" type="button"><i class="bi bi-archive"></i> Backups</button>
       <button class="nav-link" data-view="history" type="button"><i class="bi bi-clock-history"></i> History</button>
@@ -351,10 +352,7 @@ ORDER BY p.model;</code></pre>
                 </div>
                 <div class="col-md-4" data-ac="categories"></div>
                 <div class="col-md-4" data-ac="brands"></div>
-                <div class="col-md-4 f-single">
-                  <label class="form-label">Color</label>
-                  <input name="color" class="form-control" autocomplete="off">
-                </div>
+                <div class="col-md-4" data-ac="colors"></div>
               </div>
             </fieldset>
             <fieldset class="col-12 product-field-group">
@@ -771,10 +769,7 @@ ORDER BY p.model;</code></pre>
                 </div>
                 <div class="col-md-4"><div id="ipfCategory"></div></div>
                 <div class="col-md-4"><div id="ipfBrand"></div></div>
-                <div class="col-md-4">
-                  <label class="form-label">Color</label>
-                  <input name="color" class="form-control" autocomplete="off">
-                </div>
+                <div class="col-md-4"><div id="ipfColor"></div></div>
               </div>
             </fieldset>
             <fieldset class="col-12 product-field-group">

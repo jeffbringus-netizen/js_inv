@@ -5,9 +5,11 @@ const { logHistory } = require('../db');
 const router = express.Router();
 
 const SELECT_PRODUCTS = `
-  SELECT p.*, b.name AS brand, b.price AS brand_price, b.cost AS brand_cost,
-         c.name AS category, s.name AS supplier, l.name AS location
+  SELECT p.*, col.name AS color_name, col.tag_color, col.tag_text, col.tag_border,
+    b.name AS brand, b.price AS brand_price, b.cost AS brand_cost,
+    c.name AS category, s.name AS supplier, l.name AS location
   FROM products p
+  LEFT JOIN colors col ON col.id = p.color_id
   LEFT JOIN brands b ON b.id = p.brand_id
   LEFT JOIN categories c ON c.id = p.category_id
   LEFT JOIN suppliers s ON s.id = p.supplier_id
@@ -46,7 +48,16 @@ function getFullProduct(id) {
   return attachRelations(rows)[0];
 }
 
-const HISTORY_FIELDS = ['model', 'name', 'ean', 'sku', 'color', 'quantity', 'price', 'cost',
+function resolveColorId(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (Number.isInteger(Number(value)) && db.prepare('SELECT id FROM colors WHERE id = ?').get(Number(value))) return Number(value);
+  const name = String(value).trim();
+  const existing = db.prepare('SELECT id FROM colors WHERE name = ?').get(name);
+  if (existing) return existing.id;
+  return db.prepare('INSERT INTO colors (name) VALUES (?)').run(name).lastInsertRowid;
+}
+
+const HISTORY_FIELDS = ['model', 'name', 'ean', 'sku', 'color_name', 'quantity', 'price', 'cost',
   'supplier_name', 'brand', 'category', 'supplier', 'location', 'is_online', 'is_archived'];
 
 function diffProducts(before, after) {
@@ -70,7 +81,7 @@ router.get('/', (req, res) => {
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 100));
   const sortExpressions = {
     location: 'l.name', model: 'p.model', name: 'p.name', category: 'c.name',
-    brand: 'b.name', sku: 'p.sku', color: 'p.color', quantity: 'p.quantity',
+    brand: 'b.name', sku: 'p.sku', color: 'col.name', quantity: 'p.quantity',
     price: 'p.price', margin: 'CASE WHEN p.cost > 0 THEN (p.price / 1.2) / p.cost END'
   };
   const sortExpression = sortExpressions[req.query.sort] || 'p.id';
@@ -84,7 +95,7 @@ router.get('/', (req, res) => {
     category: 'c.name',
     brand: 'b.name',
     supplier: 's.name',
-    color: 'p.color'
+    color: 'col.name'
   };
   for (const [key, column] of Object.entries(exactFilters)) {
     const value = String(req.query[`filter_${key}`] || '').trim();
@@ -116,7 +127,7 @@ router.get('/', (req, res) => {
     where.push(`(
       LOWER(COALESCE(p.model, '')) LIKE ? OR LOWER(p.name) LIKE ? OR
       LOWER(COALESCE(p.ean, '')) LIKE ? OR LOWER(p.sku) LIKE ? OR
-      LOWER(p.color) LIKE ? OR LOWER(COALESCE(p.supplier_name, '')) LIKE ? OR
+      LOWER(COALESCE(col.name, '')) LIKE ? OR LOWER(COALESCE(p.supplier_name, '')) LIKE ? OR
       LOWER(COALESCE(b.name, '')) LIKE ? OR LOWER(COALESCE(c.name, '')) LIKE ? OR
       LOWER(COALESCE(s.name, '')) LIKE ? OR LOWER(COALESCE(l.name, '')) LIKE ? OR
       CAST(p.quantity AS TEXT) LIKE ? OR CAST(p.price AS TEXT) LIKE ? OR CAST(p.cost AS TEXT) LIKE ? OR
@@ -127,6 +138,7 @@ router.get('/', (req, res) => {
   }
   const whereSql = where.length ? ` WHERE ${where.join(' AND ')}` : '';
   const fromSql = ` FROM products p
+    LEFT JOIN colors col ON col.id = p.color_id
     LEFT JOIN brands b ON b.id = p.brand_id
     LEFT JOIN categories c ON c.id = p.category_id
     LEFT JOIN suppliers s ON s.id = p.supplier_id
@@ -161,7 +173,7 @@ function saveRelations(productId, deviceIds, featureIds) {
 }
 
 const REQUIRED = ['name', 'sku', 'quantity', 'price', 'cost'];
-const FIELDS = ['model', 'name', 'ean', 'sku', 'color', 'quantity', 'price', 'cost', 'supplier_name', 'is_online', 'is_archived', 'brand_id', 'category_id', 'supplier_id', 'location_id'];
+const FIELDS = ['model', 'name', 'ean', 'sku', 'color_id', 'quantity', 'price', 'cost', 'supplier_name', 'is_online', 'is_archived', 'brand_id', 'category_id', 'supplier_id', 'location_id'];
 
 function validate(body) {
   for (const f of REQUIRED) {
@@ -180,6 +192,7 @@ function normalize(body) {
   }
   params.is_online = (body.is_online === 1 || body.is_online === '1' || body.is_online === true || body.is_online === 'on') ? 1 : 0;
   params.is_archived = (body.is_archived === 1 || body.is_archived === '1' || body.is_archived === true || body.is_archived === 'on') ? 1 : 0;
+  params.color_id = resolveColorId(body.color_id ?? body.color);
   return params;
 }
 
@@ -201,8 +214,9 @@ function historyLabel(p) {
 // device_ids/feature_ids, when sent, REPLACE every product's list.
 router.post('/mass-update', (req, res) => {
   const { ids, patch = {} } = req.body;
+  if (patch.color !== undefined && patch.color_id === undefined) patch.color_id = resolveColorId(patch.color);
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'No products selected' });
-  const ALLOWED = ['quantity', 'price', 'cost', 'color', 'is_online', 'is_archived', 'category_id', 'brand_id', 'supplier_id', 'location_id'];
+  const ALLOWED = ['quantity', 'price', 'cost', 'color_id', 'is_online', 'is_archived', 'category_id', 'brand_id', 'supplier_id', 'location_id'];
   const sets = [], vals = [];
   for (const k of ALLOWED) {
     if (patch[k] !== undefined && patch[k] !== null && patch[k] !== '') { sets.push(`${k} = ?`); vals.push(patch[k]); }
@@ -225,14 +239,14 @@ router.post('/mass-update', (req, res) => {
     return {
       label: historyLabel(p),
       location: p.location, brand: p.brand, category: p.category, supplier: p.supplier,
-      color: p.color,
+      color: p.color_name,
       quantity: p.quantity, price: p.price, cost: p.cost, is_online: p.is_online, is_archived: p.is_archived,
       devices: p.devices.map(d => d.name).join(', '), features: p.features.map(f => f.name).join(', ')
     };
   });
 
   const TABLE_BY_KEY = {
-    category_id: 'categories', brand_id: 'brands', supplier_id: 'suppliers', location_id: 'locations'
+    category_id: 'categories', brand_id: 'brands', supplier_id: 'suppliers', location_id: 'locations', color_id: 'colors'
   };
   const entityName = (table, id) => {
     const row = db.prepare(`SELECT name FROM ${table} WHERE id = ?`).get(id);

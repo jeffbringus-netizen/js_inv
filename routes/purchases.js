@@ -6,6 +6,13 @@ const tfoParser = require('../parsers/tfo');
 
 const router = express.Router();
 
+function resolveColorId(value) {
+  if (!value) return null;
+  const existing = db.prepare('SELECT id FROM colors WHERE name = ?').get(String(value).trim());
+  if (existing) return existing.id;
+  return db.prepare('INSERT INTO colors (name) VALUES (?)').run(String(value).trim()).lastInsertRowid;
+}
+
 // POST /api/purchases/parse-koff  { data: <base64 xlsx> }
 router.post('/parse-koff', (req, res) => {
   if (!req.body.data) return res.status(400).json({ error: 'No file data received' });
@@ -136,10 +143,11 @@ router.post('/complete', (req, res) => {
         const brandId = np.brand ? findOrCreateBrand(np.brand) : null;
         const categoryId = np.category ? findOrCreate('categories', np.category, 'categories') : null;
         const locationId = np.location ? findOrCreate('locations', np.location, 'locations') : null;
+        const colorId = resolveColorId(np.color_id || np.color);
         const info = db.prepare(`INSERT INTO products
-          (model, name, ean, sku, color, quantity, price, cost, supplier_name, brand_id, category_id, supplier_id, location_id)
+          (model, name, ean, sku, color_id, quantity, price, cost, supplier_name, brand_id, category_id, supplier_id, location_id)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .run(np.model || null, np.name, np.ean, np.sku, np.color, np.quantity, np.price, np.cost,
+          .run(np.model || null, np.name, np.ean, np.sku, colorId, np.quantity, np.price, np.cost,
                np.supplier_name || null, brandId, categoryId, supplier_id, locationId);
         linkPp.run(purchaseOrderId, info.lastInsertRowid, np.quantity, np.sort ?? 0, 1);
         for (const deviceId of np.device_ids || []) linkDev.run(info.lastInsertRowid, deviceId);

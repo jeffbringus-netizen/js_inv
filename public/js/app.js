@@ -45,6 +45,7 @@ async function loadProducts() {
 function filterMatches(p, field, value) {
   if (field === 'device') return p.devices.some(d => d.name === value);
   if (field === 'feature') return p.features.some(f => f.name === value);
+  if (field === 'color') return p.color_name === value;
   return p[field] === value;
 }
 
@@ -94,7 +95,7 @@ function render() {
           ${p.features.map(f => `<span class="badge text-bg-success badge-click feature-badge" data-filter="feature" data-value="${esc(f.name)}">${f.name}</span>`).join('')}
         </div>
       </td>
-      <td class="text-center">${colBadge('color', p.color)}</td>
+      <td class="text-center">${p.color_name ? `<span class="badge badge-click" data-filter="color" data-value="${esc(p.color_name)}" style="background:${esc(p.tag_color || '#6c757d')};color:${esc(p.tag_text || '#fff')};border:1px solid ${esc(p.tag_border || '#6c757d')}">${hl(p.color_name)}</span>` : ''}</td>
       <td class="text-center">${p.model
         ? `<a class="badge ${qtyClass(p.quantity)} product-label-link" href="${esc(productLabelUrl(p.model))}" target="_blank" rel="noopener noreferrer" title="Open product label link">${p.quantity}</a>`
         : `<span class="badge ${qtyClass(p.quantity)}" title="Quantity in stock">${p.quantity}</span>`}</td>
@@ -260,6 +261,7 @@ const AC_CONFIG = {
   brands: { label: 'Brand', single: true, prefill: true },
   suppliers: { label: 'Manufacturer / Supplier', single: true, promptFullName: true },
   locations: { label: 'Location', single: true },
+  colors: { label: 'Color', single: true, colorDefaults: true },
   devices: { label: 'Compatible devices', multi: true, promptYear: true },
   features: { label: 'Features', multi: true }
 };
@@ -312,6 +314,12 @@ function createAutocomplete(container, type, onChange) {
     const badgeBox = container.querySelector('.selected-badges');
     if (!badgeBox) {
       input.value = displayValue(state.selected[0]);
+      if (type === 'colors') {
+        const color = state.selected[0];
+        input.style.backgroundColor = color?.tag_color || '';
+        input.style.color = color?.tag_text || '';
+        input.style.borderColor = color?.tag_border || '';
+      }
       return;
     }
     badgeBox.innerHTML = state.selected.map((s, i) =>
@@ -325,7 +333,7 @@ function createAutocomplete(container, type, onChange) {
     if (!q) { listEl.classList.add('d-none'); return; }
     const rows = await fetch(`/api/entities/${type}?q=` + encodeURIComponent(q)).then(r => r.json());
     const exact = rows.some(r => r.name.toLowerCase() === q.toLowerCase());
-    let html = rows.map((r, i) => `<div class="ac-item" data-i="${i}">${esc(r.name)}${r.year ? ` <span class="text-muted small">(${r.year})</span>` : ''}${type === 'brands' && r.price != null ? ` <span class="text-muted small">(${esc(eur(r.price))})</span>` : ''}</div>`).join('');
+    let html = rows.map((r, i) => `<div class="ac-item" data-i="${i}">${type === 'colors' ? `<span class="badge" style="background:${esc(r.tag_color)};color:${esc(r.tag_text)};border:1px solid ${esc(r.tag_border)}">${esc(r.name)}</span>` : esc(r.name)}${r.year ? ` <span class="text-muted small">(${r.year})</span>` : ''}${type === 'brands' && r.price != null ? ` <span class="text-muted small">(${esc(eur(r.price))})</span>` : ''}</div>`).join('');
     if (!exact) html += `<div class="ac-hint">No match for "${esc(q)}" — press Enter to add</div>`;
     listEl.innerHTML = html;
     listEl.rows = rows;
@@ -350,6 +358,11 @@ function createAutocomplete(container, type, onChange) {
     if (exact) return select(exact);
     // create new entity
     const body = { name: q };
+    if (cfg.colorDefaults) {
+      body.tag_color = '#6c757d';
+      body.tag_text = '#ffffff';
+      body.tag_border = '#6c757d';
+    }
     if (cfg.promptYear) {
       const y = prompt(`Year for new device "${q}":`, new Date().getFullYear());
       if (y === null) return;
@@ -441,10 +454,10 @@ productModalElement.addEventListener('click', event => {
 
 function serializeProductForm() {
   return JSON.stringify({
-    f: ['model', 'name', 'ean', 'sku', 'color', 'quantity', 'price', 'cost', 'supplier_name'].map(n => form[n].value),
+    f: ['model', 'name', 'ean', 'sku', 'quantity', 'price', 'cost', 'supplier_name'].map(n => form[n].value),
     online: form.is_online.checked,
     archived: form.is_archived.checked,
-    ac: ['brands', 'categories', 'suppliers', 'locations'].map(k => acWidgets[k].getSelected().map(x => x.id)),
+    ac: ['brands', 'categories', 'suppliers', 'locations', 'colors'].map(k => acWidgets[k].getSelected().map(x => x.id)),
     devices: acWidgets.devices.getSelected().map(x => x.id).sort((a, b) => a - b),
     features: acWidgets.features.getSelected().map(x => x.id).sort((a, b) => a - b)
   });
@@ -469,6 +482,7 @@ async function openModal(id) {
   delete form.price.dataset.touched;
   delete form.cost.dataset.touched;
   form.reset();
+  form.querySelectorAll('.is-invalid').forEach(input => input.classList.remove('is-invalid'));
   syncModalStatusToggles();
   form.model.placeholder = '';
   document.querySelectorAll('.selected-badges').forEach(b => b.innerHTML = '');
@@ -488,7 +502,7 @@ async function openModal(id) {
     form.name.value = p.name;
     form.sku.value = p.sku;
     form.ean.value = p.ean;
-    form.color.value = p.color;
+    acWidgets.colors.set(p.color_id ? [{ id: p.color_id, name: p.color_name, tag_color: p.tag_color, tag_text: p.tag_text, tag_border: p.tag_border }] : []);
     form.quantity.value = p.quantity;
     form.price.value = p.price;
     form.cost.value = p.cost;
@@ -721,7 +735,32 @@ $('#massSaveCloseBtn').addEventListener('click', () => saveMassEdit(true));
 
 $('#addProductBtn').addEventListener('click', () => openModal(null));
 
+function validateRequiredFields(form, fields, errorElement) {
+  const missing = [];
+  for (const [field, label] of fields) {
+    const input = form.elements[field];
+    if (!input) continue;
+    const empty = !String(input.value).trim();
+    input.classList.toggle('is-invalid', empty);
+    if (empty) missing.push(label);
+  }
+  if (missing.length) {
+    errorElement.textContent = `Please fill in all required fields: ${missing.join(', ')}`;
+    errorElement.hidden = false;
+    return false;
+  }
+  errorElement.hidden = true;
+  return true;
+}
+
+form.addEventListener('input', e => {
+  if (e.target.classList.contains('is-invalid') && String(e.target.value).trim()) {
+    e.target.classList.remove('is-invalid');
+  }
+});
+
 $('#saveProductBtn').addEventListener('click', async () => {
+  if (!validateRequiredFields(form, [['name', 'Name'], ['sku', 'SKU'], ['quantity', 'Quantity'], ['price', 'Price'], ['cost', 'Cost']], $('.modal-error'))) return;
   const body = Object.fromEntries(new FormData(form).entries());
   body.is_online = form.is_online.checked ? 1 : 0;
   body.is_archived = form.is_archived.checked ? 1 : 0;
@@ -797,6 +836,16 @@ const ENTITY_DEFS = {
     title: 'Features', singular: 'feature',
     fields: [{ key: 'name', label: 'Name', type: 'text', required: true }],
     columns: ['Name']
+  },
+  colors: {
+    title: 'Colors', singular: 'color',
+    fields: [
+      { key: 'name', label: 'Name', type: 'text', required: true },
+      { key: 'tag_color', label: 'Tag color', type: 'color', required: true },
+      { key: 'tag_text', label: 'Tag text', type: 'color', required: true },
+      { key: 'tag_border', label: 'Tag border', type: 'color', required: true }
+    ],
+    columns: ['Name', 'Tag color', 'Tag text', 'Tag border']
   }
 };
 
@@ -838,7 +887,10 @@ function renderEntities() {
   const def = ENTITY_DEFS[currentEntity];
   $('#entityTableHead').innerHTML = `<tr>${def.columns.map(c => `<th>${c}</th>`).join('')}<th>Products</th><th style="width: 110px;">Actions</th></tr>`;
   $('#entityRows').innerHTML = entityRows.map((r, i) => `<tr data-i="${i}">
-    <td>${entityHl(r.name)}</td>
+    <td>${currentEntity === 'colors'
+      ? `<span class="badge" style="background:${esc(r.tag_color)};color:${esc(r.tag_text)};border:1px solid ${esc(r.tag_border)}">${entityHl(r.name)}</span>`
+      : entityHl(r.name)}</td>
+    ${currentEntity === 'colors' ? `<td>${esc(r.tag_color)}</td><td>${esc(r.tag_text)}</td><td>${esc(r.tag_border)}</td>` : ''}
     ${currentEntity === 'devices' ? `<td>${entityHl(r.short_name || '')}</td><td>${r.year}</td>` : ''}
     ${currentEntity === 'brands' ? `<td class="text-nowrap">${r.price == null ? '—' : eur(r.price)}</td><td class="text-nowrap">${r.cost == null ? '—' : eur(r.cost)}</td>` : ''}
     ${currentEntity === 'suppliers' ? `<td>${entityHl(r.full_name)}</td>` : ''}
@@ -892,11 +944,14 @@ const entityModal = new bootstrap.Modal('#entityModal');
 let entityEditId = null;
 
 function entityModalFields() {
-  return ENTITY_DEFS[currentEntity].fields.map(f => `
+  const fields = ENTITY_DEFS[currentEntity].fields.map(f => `
     <div class="col-12">
       <label class="form-label">${f.label}${f.required ? ' *' : ''}</label>
       <input name="${f.key}" type="${f.type}" ${f.step ? `step="${f.step}"` : ''} class="form-control" ${f.required ? 'required' : ''}>
     </div>`).join('');
+  return currentEntity === 'colors'
+    ? fields + '<div class="col-12"><label class="form-label">Preview</label><div id="colorModalPreview" class="p-3 border rounded"><span class="badge">Color preview</span></div></div>'
+    : fields;
 }
 
 function openEntityModal(row = null) {
@@ -911,8 +966,22 @@ function openEntityModal(row = null) {
     const val = row ? row[f.key] : (f.default ?? '');
     form[f.key].value = val == null ? '' : val;
   }
+  if (currentEntity === 'colors') updateColorModalPreview();
   entityModal.show();
 }
+
+function updateColorModalPreview() {
+  const form = $('#entityForm');
+  const preview = $('#colorModalPreview .badge');
+  if (!preview || !form) return;
+  preview.style.backgroundColor = form.tag_color.value;
+  preview.style.color = form.tag_text.value;
+  preview.style.border = `1px solid ${form.tag_border.value}`;
+}
+
+$('#entityForm').addEventListener('input', e => {
+  if (currentEntity === 'colors' && ['tag_color', 'tag_text', 'tag_border'].includes(e.target.name)) updateColorModalPreview();
+});
 
 $('#entityCreateBtn').addEventListener('click', () => openEntityModal());
 
@@ -1019,7 +1088,8 @@ function confirmDeleteEntity(row) {
     categories: 'Products in this category will be left without a category.',
     brands: "Products of this brand will be left without a brand.",
     suppliers: 'Products of this supplier will be left without a supplier.',
-    locations: 'Products in this location will be left without a location.'
+    locations: 'Products in this location will be left without a location.',
+    colors: 'Products with this color will be left without a color.'
   }[currentEntity];
   $('#confirmDeleteMsg').innerHTML =
     `Delete <strong>${esc(row.name)}</strong>?<br>
@@ -1312,6 +1382,7 @@ const VIEW_IDS = {
   brands: '#entitiesView',
   suppliers: '#entitiesView',
   features: '#entitiesView',
+  colors: '#entitiesView',
   history: '#historyView',
   backups: '#backupsView',
   webstock: '#webstockView',
@@ -2014,6 +2085,10 @@ async function handleXlsx(file) {
           sku: row.sku,
           ean: row.ean,
           color: row.parsed.color || '',
+          color_id: row.parsed.color_id || null,
+          tag_color: row.parsed.tag_color,
+          tag_text: row.parsed.tag_text,
+          tag_border: row.parsed.tag_border,
           quantity: row.quantity,
           price: row.parsed.brand_price != null ? row.parsed.brand_price : '',
           cost: row.cost,
@@ -2077,7 +2152,7 @@ function renderImportTables() {
     </td>
     <td>${esc(r.category) || '<span class="text-muted">—</span>'}</td>
     <td>${esc(r.brand) || '<span class="text-muted">—</span>'}</td>
-    <td>${esc(r.color)}</td>
+    <td>${r.color ? `<span class="badge" style="background:${esc(r.tag_color || '#6c757d')};color:${esc(r.tag_text || '#fff')};border:1px solid ${esc(r.tag_border || '#6c757d')}">${esc(r.color)}</span>` : '<span class="text-muted">—</span>'}</td>
     <td>${r.quantity}</td>
     <td class="text-nowrap">${r.price === '' ? '<span class="badge text-bg-danger">missing</span>' : eur(r.price)}</td>
     <td class="text-nowrap">${eur(r.cost)}</td>
@@ -2143,6 +2218,7 @@ let importEditIndex = null;
 const ipfCategories = createAutocomplete($('#ipfCategory'), 'categories');
 const ipfLocations = createAutocomplete($('#ipfLocation'), 'locations');
 const ipfBrands = createAutocomplete($('#ipfBrand'), 'brands');
+const ipfColors = createAutocomplete($('#ipfColor'), 'colors');
 const ipfDevices = createAutocomplete($('#ipfDevices'), 'devices');
 const ipfFeatures = createAutocomplete($('#ipfFeatures'), 'features');
 let importFormSnapshot = '';
@@ -2151,11 +2227,12 @@ let allowImportProductHide = false;
 function serializeImportProductForm() {
   const f = importProductForm;
   return JSON.stringify({
-    fields: ['model', 'name', 'sku', 'ean', 'color', 'quantity', 'price', 'cost', 'supplier_name']
+    fields: ['model', 'name', 'sku', 'ean', 'quantity', 'price', 'cost', 'supplier_name']
       .map(name => f[name].value),
     categories: ipfCategories.getSelected().map(item => item.id ?? item.name),
     locations: ipfLocations.getSelected().map(item => item.id ?? item.name),
     brands: ipfBrands.getSelected().map(item => item.id ?? item.name),
+    colors: ipfColors.getSelected().map(item => item.id ?? item.name),
     devices: ipfDevices.getSelected().map(item => item.id ?? item.name).sort(),
     features: ipfFeatures.getSelected().map(item => item.id ?? item.name).sort()
   });
@@ -2190,12 +2267,12 @@ $('#importNewRows').addEventListener('click', async e => {
   const r = importNew[i];
   importEditIndex = i;
   importProductForm.reset();
+  importProductForm.querySelectorAll('.is-invalid').forEach(input => input.classList.remove('is-invalid'));
   $('#importProductTitle').textContent = `Edit import product #${i + 1}`;
   importProductForm.model.value = r.model;
   importProductForm.name.value = r.name;
   importProductForm.sku.value = r.sku;
   importProductForm.ean.value = r.ean;
-  importProductForm.color.value = r.color;
   importProductForm.quantity.value = r.quantity;
   importProductForm.price.value = r.price;
   importProductForm.cost.value = r.cost;
@@ -2203,6 +2280,7 @@ $('#importNewRows').addEventListener('click', async e => {
   await setImportAutocomplete(ipfCategories, r.category, 'categories');
   await setImportAutocomplete(ipfLocations, r.location, 'locations');
   await setImportAutocomplete(ipfBrands, r.brand, 'brands');
+  await setImportAutocomplete(ipfColors, r.color, 'colors');
   ipfDevices.set(r.devices);
   ipfFeatures.set(r.features || []);
   $('#ipfWarning').hidden = true;
@@ -2213,21 +2291,18 @@ $('#importNewRows').addEventListener('click', async e => {
 $('#saveImportProductBtn').addEventListener('click', () => {
   const f = importProductForm;
   const warn = $('#ipfWarning');
-  const required = [['name', 'Name'], ['sku', 'SKU'],
-    ['quantity', 'Quantity'], ['price', 'Price'], ['cost', 'Cost']];
-  const missing = required.filter(([field]) => !String(f[field].value).trim()).map(([, label]) => label);
-  if (missing.length) {
-    warn.textContent = 'Please fill in required fields before saving: ' + missing.join(', ');
-    warn.hidden = false;
-    return;
-  }
+  if (!validateRequiredFields(f, [['name', 'Name'], ['sku', 'SKU'], ['quantity', 'Quantity'], ['price', 'Price'], ['cost', 'Cost']], warn)) return;
   warn.hidden = true;
   const r = importNew[importEditIndex];
   r.model = f.model.value;
   r.name = f.name.value;
   r.sku = f.sku.value;
   r.ean = f.ean.value;
-  r.color = f.color.value;
+  r.color = ipfColors.getSelected()[0]?.name || '';
+  r.color_id = ipfColors.value;
+  r.tag_color = ipfColors.getSelected()[0]?.tag_color;
+  r.tag_text = ipfColors.getSelected()[0]?.tag_text;
+  r.tag_border = ipfColors.getSelected()[0]?.tag_border;
   r.quantity = Number(f.quantity.value);
   r.price = f.price.value === '' ? '' : Number(f.price.value);
   r.cost = f.cost.value === '' ? 0 : Number(f.cost.value);
@@ -2314,7 +2389,7 @@ $('#completeImportBtn').addEventListener('click', async () => {
   });
   const new_products = importNew.filter(r => r.include).map(r => ({
     model: r.model || null,
-    name: r.name, ean: r.ean, sku: r.sku, color: r.color,
+    name: r.name, ean: r.ean, sku: r.sku, color: r.color, color_id: r.color_id,
     quantity: Number(r.quantity), price: Number(r.price), cost: Number(r.cost),
     supplier_name: r.supplier_name || null,
     brand: r.brand || null, category: r.category || null, location: r.location || null,

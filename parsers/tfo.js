@@ -163,6 +163,15 @@ function parseName(originalName, db) {
     ? compatibilityText.split('/').map(item => item.trim()).filter(Boolean)
     : [];
   devices = devices.map(device => cleanDeviceText(device, parsed.color)).filter(Boolean);
+  const colorRecord = parsed.color
+    ? db.prepare('SELECT id, tag_color, tag_text, tag_border FROM colors WHERE name = ?').get(parsed.color)
+    : null;
+  if (colorRecord) Object.assign(parsed, {
+    color_id: colorRecord.id,
+    tag_color: colorRecord.tag_color,
+    tag_text: colorRecord.tag_text,
+    tag_border: colorRecord.tag_border
+  });
   const deviceRows = db.prepare('SELECT id, name FROM devices').all();
   const deviceMap = new Map(deviceRows.map(device => [normalize(device.name), device]));
   for (const deviceText of devices) {

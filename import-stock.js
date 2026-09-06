@@ -18,6 +18,12 @@ const num = v => {
   return isNaN(n) ? null : n;
 };
 
+function colorId(name) {
+  if (!name) return null;
+  const row = db.prepare('SELECT id FROM colors WHERE name = ?').get(name);
+  return row ? row.id : db.prepare('INSERT INTO colors (name) VALUES (?)').run(name).lastInsertRowid;
+}
+
 function wipe() {  
   db.exec(`
     DELETE FROM sale_products;
@@ -93,7 +99,7 @@ const tx = db.transaction(() => {
   wipe();
 
   const insProduct = db.prepare(`INSERT INTO products
-    (model, name, ean, sku, color, quantity, price, cost, supplier_name, brand_id, category_id, supplier_id, location_id, is_online)
+    (model, name, ean, sku, color_id, quantity, price, cost, supplier_name, brand_id, category_id, supplier_id, location_id, is_online)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const insPD = db.prepare('INSERT OR IGNORE INTO product_devices (product_id, device_id) VALUES (?, ?)');
   const insPF = db.prepare('INSERT OR IGNORE INTO product_features (product_id, feature_id) VALUES (?, ?)');
@@ -160,7 +166,7 @@ const tx = db.transaction(() => {
 
       const pid = insProduct.run(
         modelRaw || null, productName, ean, sku,
-        color || null, quantity,
+        colorId(color), quantity,
         price == null ? 0 : price, finalCost,
         name || null, // supplier's product name
         brandId, categoryId, supplierId, locationId,

@@ -35,6 +35,16 @@ function parse(data, db) {
     if (!supplierName && !sku && !ean && !quantity) continue;
 
     const parsedRow = parseName(supplierName, deviceByLower);
+    if (parsedRow.color) {
+      const color = db.prepare(`SELECT id, tag_color, tag_text, tag_border
+        FROM colors WHERE LOWER(name) = LOWER(?)`).get(parsedRow.color);
+      if (color) Object.assign(parsedRow, {
+        color_id: color.id,
+        tag_color: color.tag_color,
+        tag_text: color.tag_text,
+        tag_border: color.tag_border
+      });
+    }
     const brand = parsedRow.brand ? brandByName.get(parsedRow.brand) : null;
     if (brand && brand.price != null) parsedRow.brand_price = brand.price;
     const existing = sku ? productBySku.get(sku.toLowerCase()) || null : null;

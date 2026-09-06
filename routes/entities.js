@@ -10,7 +10,8 @@ const TYPES = {
   brands: { table: 'brands', fields: ['name', 'price', 'cost'], required: ['name'] },
   categories: { table: 'categories', fields: ['name'], required: ['name'] },
   suppliers: { table: 'suppliers', fields: ['name', 'full_name'], required: ['name', 'full_name'] },
-  locations: { table: 'locations', fields: ['name'], required: ['name'] }
+  locations: { table: 'locations', fields: ['name'], required: ['name'] },
+  colors: { table: 'colors', fields: ['name', 'tag_color', 'tag_text', 'tag_border'], required: ['name', 'tag_color', 'tag_text', 'tag_border'] }
 };
 
 const COUNT_EXPR = {
@@ -19,7 +20,8 @@ const COUNT_EXPR = {
   brands: '(SELECT COUNT(*) FROM products p WHERE p.brand_id = t.id)',
   categories: '(SELECT COUNT(*) FROM products p WHERE p.category_id = t.id)',
   suppliers: '(SELECT COUNT(*) FROM products p WHERE p.supplier_id = t.id)',
-  locations: '(SELECT COUNT(*) FROM products p WHERE p.location_id = t.id)'
+  locations: '(SELECT COUNT(*) FROM products p WHERE p.location_id = t.id)',
+  colors: '(SELECT COUNT(*) FROM products p WHERE p.color_id = t.id)'
 };
 
 const EDITABLE = {
@@ -28,7 +30,8 @@ const EDITABLE = {
   brands: ['name', 'price', 'cost'],
   categories: ['name'],
   suppliers: ['name', 'full_name'],
-  locations: ['name']
+  locations: ['name'],
+  colors: ['name', 'tag_color', 'tag_text', 'tag_border']
 };
 
 router.get('/:type', (req, res) => {
@@ -77,6 +80,10 @@ const LINKED_PRODUCTS = {
   categories: {
     list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity FROM products p WHERE p.category_id = ? ORDER BY p.name`,
     unlink: () => db.prepare('UPDATE products SET category_id = NULL WHERE category_id = ? AND id = ?')
+  },
+  colors: {
+    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity FROM products p WHERE p.color_id = ? ORDER BY p.name`,
+    unlink: () => db.prepare('UPDATE products SET color_id = NULL WHERE color_id = ? AND id = ?')
   },
   locations: {
     list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity FROM products p WHERE p.location_id = ? ORDER BY p.name`,
