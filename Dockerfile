@@ -15,6 +15,7 @@ RUN npm ci --omit=dev
 COPY server.js db.js backup.js logger.js ./
 
 COPY routes ./routes
+COPY parsers ./parsers
 COPY public ./public
 
 ENV NODE_ENV=production \
