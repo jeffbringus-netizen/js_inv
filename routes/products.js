@@ -152,7 +152,7 @@ function saveRelations(productId, deviceIds, featureIds) {
   }
 }
 
-const REQUIRED = ['name', 'sku', 'color', 'quantity', 'price', 'cost'];
+const REQUIRED = ['name', 'sku', 'quantity', 'price', 'cost'];
 const FIELDS = ['model', 'name', 'ean', 'sku', 'color', 'quantity', 'price', 'cost', 'supplier_name', 'is_online', 'is_archived', 'brand_id', 'category_id', 'supplier_id', 'location_id'];
 
 function validate(body) {

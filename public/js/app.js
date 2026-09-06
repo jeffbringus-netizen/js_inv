@@ -1990,26 +1990,29 @@ async function handleXlsx(file) {
       return r.json();
     });
     const nextModel = parseInt((await fetch('/api/products/next-model').then(r => r.json())).model, 10);
+    if (importer === 'tfo' && data.shipping != null) $('#importShipping').value = data.shipping;
     importExisting = [];
     importNew = [];
     let mi = 0;
     let fileOrder = 0;
     for (const row of data.rows) {
       fileOrder++;
+      const sort = row.entry_number == null ? fileOrder : row.entry_number;
       if (row.existing) {
         importExisting.push({
           include: true,
-          sort: fileOrder,
+          sort,
           product_id: row.existing.id,
           name: row.existing.name,
           db: row.existing,
+          changes: { supplier_name: true, ean: true, cost: true },
           file: { supplier_name: row.supplier_name, ean: row.ean, quantity: row.quantity, cost: row.cost }
         });
       } else {
         importNew.push({
           include: true,
           updated: 0,
-          sort: fileOrder,
+          sort,
           model: String(nextModel + mi++),
           name: row.parsed.name || '',
           sku: row.sku,
@@ -2018,7 +2021,7 @@ async function handleXlsx(file) {
           quantity: row.quantity,
           price: row.parsed.brand_price != null ? row.parsed.brand_price : '',
           cost: row.cost,
-          category: '',
+          category: row.parsed.category || '',
           location: '',
           brand: row.parsed.brand || '',
           supplier_name: row.supplier_name,
@@ -2035,10 +2038,17 @@ async function handleXlsx(file) {
   }
 }
 
-function diffCell(oldVal, newVal, showChanged = true) {
+function diffCell(oldVal, newVal, field, rowIndex, changes) {
   const changed = String(oldVal ?? '') !== String(newVal ?? '');
   if (!changed) return esc(newVal ?? '');
-  return `<s class="text-muted">${esc(oldVal ?? '')}</s> <i class="bi bi-arrow-right"></i> ${esc(newVal ?? '')}${showChanged ? ' <span class="badge text-bg-warning">changed</span>' : ''}`;
+  if (typeof field !== 'string') {
+    const showChanged = field !== false;
+    return `<s class="text-muted">${esc(oldVal ?? '')}</s> <i class="bi bi-arrow-right"></i> ${esc(newVal ?? '')}${showChanged ? ' <span class="badge text-bg-warning">changed</span>' : ''}`;
+  }
+  const active = changes[field];
+  return `<s class="text-muted">${esc(oldVal ?? '')}</s> <i class="bi bi-arrow-right"></i> ${esc(newVal ?? '')}
+    <button type="button" class="badge badge-click border-0 ${active ? 'text-bg-warning' : 'text-bg-danger'} imp-change-toggle"
+      data-i="${rowIndex}" data-field="${field}" title="Toggle whether this value is imported">${active ? 'changed' : 'unchanged'}</button>`;
 }
 
 function renderImportTables() {
@@ -2046,9 +2056,9 @@ function renderImportTables() {
   $('#importExistingRows').innerHTML = importExisting.map((r, i) => `<tr>
     <td><input class="form-check-input imp-ex-check" type="checkbox" data-i="${i}" ${r.include ? 'checked' : ''}></td>
     <td>${esc(r.name)}<div class="small text-muted">${esc(r.db.sku)}</div></td>
-    <td class="small">${diffCell(r.db.supplier_name, r.file.supplier_name)}</td>
-    <td class="small">${diffCell(r.db.ean, r.file.ean)}</td>
-    <td class="small">${diffCell(r.db.cost, r.file.cost)}</td>
+    <td class="small">${diffCell(r.db.supplier_name, r.file.supplier_name, 'supplier_name', i, r.changes)}</td>
+    <td class="small">${diffCell(r.db.ean, r.file.ean, 'ean', i, r.changes)}</td>
+    <td class="small">${diffCell(r.db.cost, r.file.cost, 'cost', i, r.changes)}</td>
     <td class="text-nowrap"><s class="text-muted">${r.db.quantity}</s> <i class="bi bi-arrow-right"></i> <strong>${r.db.quantity + r.file.quantity}</strong> <span class="badge text-bg-secondary">+${r.file.quantity}</span></td>
   </tr>`).join('');
 
@@ -2088,6 +2098,14 @@ function renderImportTables() {
 $('#importExistingRows').addEventListener('change', e => {
   const c = e.target.closest('.imp-ex-check');
   if (c) importExisting[Number(c.dataset.i)].include = c.checked;
+});
+$('#importExistingRows').addEventListener('click', e => {
+  const toggle = e.target.closest('.imp-change-toggle');
+  if (!toggle) return;
+  const row = importExisting[Number(toggle.dataset.i)];
+  const field = toggle.dataset.field;
+  row.changes[field] = !row.changes[field];
+  renderImportTables();
 });
 $('#importNewRows').addEventListener('change', e => {
   const c = e.target.closest('.imp-new-check');
@@ -2199,7 +2217,7 @@ $('#importNewRows').addEventListener('click', async e => {
 $('#saveImportProductBtn').addEventListener('click', () => {
   const f = importProductForm;
   const warn = $('#ipfWarning');
-  const required = [['name', 'Name'], ['sku', 'SKU'], ['color', 'Color'],
+  const required = [['name', 'Name'], ['sku', 'SKU'],
     ['quantity', 'Quantity'], ['price', 'Price'], ['cost', 'Cost']];
   const missing = required.filter(([field]) => !String(f[field].value).trim()).map(([, label]) => label);
   if (missing.length) {
@@ -2285,15 +2303,19 @@ $('#completeImportBtn').addEventListener('click', async () => {
   $('#importError').hidden = true;
   const supplier_id = importSupplierAc.value;
   if (!supplier_id) return importError('Select a supplier');
-  const updates = importExisting.filter(r => r.include).map(r => ({
-    product_id: r.product_id,
-    add_quantity: r.file.quantity,
-    purchase_price: r.file.cost,
-    ean: r.file.ean,
-    cost: r.file.cost,
-    supplier_name: r.file.supplier_name,
-    sort: r.sort
-  }));
+  const updates = importExisting.filter(r => r.include).map(r => {
+    const update = {
+      product_id: r.product_id,
+      add_quantity: r.file.quantity,
+      purchase_price: r.file.cost,
+      update_fields: r.changes,
+      sort: r.sort
+    };
+    if (r.changes.ean) update.ean = r.file.ean;
+    if (r.changes.cost) update.cost = r.file.cost;
+    if (r.changes.supplier_name) update.supplier_name = r.file.supplier_name;
+    return update;
+  });
   const new_products = importNew.filter(r => r.include).map(r => ({
     model: r.model || null,
     name: r.name, ean: r.ean, sku: r.sku, color: r.color,
@@ -2306,11 +2328,11 @@ $('#completeImportBtn').addEventListener('click', async () => {
   }));
   if (updates.length === 0 && new_products.length === 0) return importError('Nothing selected to import');
   for (const np of new_products) {
-      if (!np.name || !np.sku || !np.color ||
+      if (!np.name || !np.sku ||
           Number.isNaN(np.quantity) || np.quantity < 1 ||
           Number.isNaN(np.price) || np.price < 0 ||
           Number.isNaN(np.cost) || np.cost < 0) {
-      return importError(`New product "${np.name || np.sku || '?'}" is missing required fields (name, SKU, color, quantity, price, cost)`);
+      return importError(`New product "${np.name || np.sku || '?'}" is missing required fields (name, SKU, quantity, price, cost)`);
     }
   }
   try {

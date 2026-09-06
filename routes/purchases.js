@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { logHistory } = require('../db');
 const koffParser = require('../parsers/koff');
+const tfoParser = require('../parsers/tfo');
 
 const router = express.Router();
 
@@ -10,6 +11,16 @@ router.post('/parse-koff', (req, res) => {
   if (!req.body.data) return res.status(400).json({ error: 'No file data received' });
   try {
     res.json({ rows: koffParser.parse(req.body.data, db) });
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+});
+
+// POST /api/purchases/parse-tfo  { data: <base64 xlsx> }
+router.post('/parse-tfo', (req, res) => {
+  if (!req.body.data) return res.status(400).json({ error: 'No file data received' });
+  try {
+    res.json(tfoParser.parse(req.body.data, db));
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }
@@ -50,7 +61,7 @@ router.post('/complete', (req, res) => {
     return res.status(400).json({ error: 'Nothing to import' });
   }
 
-  const REQUIRED_NEW = ['name', 'sku', 'color', 'quantity', 'price', 'cost'];
+  const REQUIRED_NEW = ['name', 'sku', 'quantity', 'price', 'cost'];
   for (const np of new_products) {
     for (const f of REQUIRED_NEW) {
       if (np[f] === undefined || np[f] === null || np[f] === '') {
@@ -101,8 +112,23 @@ router.post('/complete', (req, res) => {
 
       for (const u of updates) {
         const p = db.prepare('SELECT * FROM products WHERE id = ?').get(u.product_id);
-        db.prepare(`UPDATE products SET quantity = quantity + ?, ean = ?, cost = ?, supplier_name = ?, is_archived = 0 WHERE id = ?`)
-          .run(u.add_quantity, u.ean || p.ean, u.cost != null ? u.cost : p.cost, u.supplier_name || p.supplier_name, u.product_id);
+        const updateFields = u.update_fields || { ean: true, cost: true, supplier_name: true };
+        const assignments = ['quantity = quantity + ?', 'is_archived = 0'];
+        const values = [u.add_quantity];
+        if (updateFields.ean) {
+          assignments.push('ean = ?');
+          values.push(u.ean || p.ean);
+        }
+        if (updateFields.cost) {
+          assignments.push('cost = ?');
+          values.push(u.cost != null ? u.cost : p.cost);
+        }
+        if (updateFields.supplier_name) {
+          assignments.push('supplier_name = ?');
+          values.push(u.supplier_name || p.supplier_name);
+        }
+        values.push(u.product_id);
+        db.prepare(`UPDATE products SET ${assignments.join(', ')} WHERE id = ?`).run(...values);
         linkPp.run(purchaseOrderId, u.product_id, u.add_quantity, u.sort ?? 0, 0);
       }
 

@@ -42,6 +42,7 @@ function getMutationAction(method, url) {
   if (method === 'POST' && /^\/api\/sale-orders\/\d+\/cancel$/.test(pathname)) return 'Canceling sale order';
 
   if (method === 'POST' && pathname === '/api/purchases/parse-koff') return 'Parsing purchase import file';
+  if (method === 'POST' && pathname === '/api/purchases/parse-tfo') return 'Parsing purchase import file';
   if (method === 'POST' && pathname === '/api/purchases/complete') return 'Completing purchase import';
 
   if (method === 'POST' && pathname === '/api/backups') return 'Creating backup';

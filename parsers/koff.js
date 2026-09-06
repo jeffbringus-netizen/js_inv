@@ -59,7 +59,7 @@ function parseName(name, deviceByLower) {
 
   const brandProduct = (segments[1] || '').split('/')[0].replace(/\s*\([^)]*\)\s*/g, '').trim();
   out.brand = segments.length > 1 ? `${segments[0]} - ${brandProduct}` : segments[0];
-  out.color = segments.length > 1 ? segments[segments.length - 1] : null;
+  out.color = segments.length > 1 ? segments[segments.length - 1].toLowerCase() : null;
 
   let devicesSegment = -1;
   if (segments.length >= 4) {

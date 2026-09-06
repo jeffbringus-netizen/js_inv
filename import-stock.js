@@ -160,7 +160,7 @@ const tx = db.transaction(() => {
 
       const pid = insProduct.run(
         modelRaw || null, productName, ean, sku,
-        color || 'unspecified', quantity,
+        color || null, quantity,
         price == null ? 0 : price, finalCost,
         name || null, // supplier's product name
         brandId, categoryId, supplierId, locationId,

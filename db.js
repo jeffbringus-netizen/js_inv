@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS products (
   name TEXT NOT NULL,
   ean TEXT UNIQUE,
   sku TEXT NOT NULL UNIQUE,
-  color TEXT NOT NULL,
+  color TEXT,
   quantity INTEGER NOT NULL,
   price REAL NOT NULL,
   cost REAL NOT NULL,
@@ -85,6 +85,41 @@ CREATE TABLE IF NOT EXISTS sale_products (
   PRIMARY KEY (order_id, product_id)
 );
 `);
+
+// Migrate databases created before color became optional. SQLite cannot alter
+// a column's NOT NULL constraint in place, so rebuild only the products table.
+const colorColumn = db.prepare('PRAGMA table_info(products)').all().find(column => column.name === 'color');
+if (colorColumn && colorColumn.notnull) {
+  db.pragma('foreign_keys = OFF');
+  db.pragma('legacy_alter_table = ON');
+  db.exec(`
+    CREATE TABLE products_migrated AS SELECT * FROM products WHERE 0;
+    DROP TABLE products_migrated;
+    ALTER TABLE products RENAME TO products_legacy;
+    CREATE TABLE products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      model TEXT UNIQUE,
+      name TEXT NOT NULL,
+      ean TEXT UNIQUE,
+      sku TEXT NOT NULL UNIQUE,
+      color TEXT,
+      quantity INTEGER NOT NULL,
+      price REAL NOT NULL,
+      cost REAL NOT NULL,
+      supplier_name TEXT,
+      is_online INTEGER NOT NULL DEFAULT 0,
+      is_archived INTEGER NOT NULL DEFAULT 0,
+      brand_id INTEGER REFERENCES brands(id),
+      category_id INTEGER REFERENCES categories(id),
+      supplier_id INTEGER REFERENCES suppliers(id),
+      location_id INTEGER REFERENCES locations(id)
+    );
+    INSERT INTO products SELECT * FROM products_legacy;
+    DROP TABLE products_legacy;
+  `);
+  db.pragma('legacy_alter_table = OFF');
+  db.pragma('foreign_keys = ON');
+}
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS purchase_orders (
