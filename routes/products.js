@@ -68,6 +68,13 @@ router.get('/', (req, res) => {
   const paginated = req.query.page !== undefined;
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 100));
+  const sortExpressions = {
+    location: 'l.name', model: 'p.model', name: 'p.name', category: 'c.name',
+    brand: 'b.name', sku: 'p.sku', color: 'p.color', quantity: 'p.quantity',
+    price: 'p.price', margin: 'CASE WHEN p.cost > 0 THEN (p.price / 1.2) / p.cost END'
+  };
+  const sortExpression = sortExpressions[req.query.sort] || 'p.id';
+  const sortDirection = String(req.query.dir).toLowerCase() === 'desc' ? 'DESC' : 'ASC';
   const includeArchived = req.query.includeArchived === '1';
   const where = [];
   const params = [];
@@ -132,7 +139,8 @@ router.get('/', (req, res) => {
   }
   const total = db.prepare(`SELECT COUNT(*) AS count${fromSql}${whereSql}`).get(...params).count;
   const offset = (page - 1) * limit;
-  const products = db.prepare(`${SELECT_PRODUCTS}${whereSql} ORDER BY p.id LIMIT ? OFFSET ?`)
+  const orderBy = `CASE WHEN (${sortExpression}) IS NULL THEN 1 ELSE 0 END ASC, ${sortExpression} ${sortDirection}, p.id ASC`;
+  const products = db.prepare(`${SELECT_PRODUCTS}${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
     .all(...params, limit, offset);
   res.json({ items: attachRelations(products), total, page, limit });
 });

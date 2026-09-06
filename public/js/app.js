@@ -29,7 +29,10 @@ function hl(text) {
 
 // ---------- data loading ----------
 async function loadProducts() {
-  const params = new URLSearchParams({ page: productPage, limit: 100, includeArchived: showArchived ? '1' : '0' });
+  const params = new URLSearchParams({
+    page: productPage, limit: 100, includeArchived: showArchived ? '1' : '0',
+    sort: sortKey, dir: sortDir === 1 ? 'asc' : 'desc'
+  });
   if (searchQuery) params.set('q', searchQuery);
   Object.entries(filters).forEach(([field, value]) => params.set(`filter_${field}`, value));
   const result = await fetch('/api/products?' + params).then(r => r.json());
@@ -65,15 +68,7 @@ const colBadge = (field, value, title = '') => value
 
 function render() {
   $('#productTable').classList.toggle('margin-hidden', !showMargin);
-  const rows = visibleProducts().sort((a, b) => {
-    let va = a[sortKey], vb = b[sortKey];
-    if (sortKey === 'sku') { va = a.sku; vb = b.sku; }
-    if (sortKey === 'margin') { va = margin(a); vb = margin(b); }
-    if (va === null || va === undefined) return 1;
-    if (vb === null || vb === undefined) return -1;
-    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * sortDir;
-    return String(va).localeCompare(String(vb), undefined, { numeric: true }) * sortDir;
-  });
+  const rows = visibleProducts();
 
   $('#productRows').innerHTML = rows.map(p => `
     <tr data-id="${p.id}">
@@ -188,7 +183,8 @@ document.querySelectorAll('#productTable th.sortable').forEach(th => {
   th.addEventListener('click', () => {
     const key = th.dataset.sort;
     if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = 1; }
-    render();
+    productPage = 1;
+    loadProducts();
   });
 });
 
