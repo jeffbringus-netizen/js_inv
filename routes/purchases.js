@@ -1,96 +1,18 @@
 const express = require('express');
-const XLSX = require('xlsx');
 const db = require('../db');
 const { logHistory } = require('../db');
+const koffParser = require('../parsers/koff');
 
 const router = express.Router();
-
-// ---------- KOFF importer ----------
-// KOFF product names look like:
-//   "Baseus - Wall Charger PicoGo (P10176800213-00) - GaN, Fast Charging, 45W, USB-C - Moon White"
-//   "Techsuit - 111D Full Cover / Full Glue Glass - Huawei nova 5T / Honor 20 / Mate 30 Lite - Black"
-// Rules: brand = start until 2nd dash, or the first slash before that dash
-// (bracketed codes ignored); color = after last dash;
-// for device products (cases/protectors) the segment between 2nd and 3rd dash lists
-// "/"-separated device names.
-function parseKoffName(name, deviceByLower) {
-  const out = { brand: null, color: null, devices: [], name: null };
-  const segs = String(name || '').split(' - ').map(s => s.trim()).filter(Boolean);
-  if (segs.length === 0) return out;
-
-  const brandProduct = (segs[1] || '').split('/')[0].replace(/\s*\([^)]*\)\s*/g, '').trim();
-  out.brand = segs.length > 1 ? `${segs[0]} - ${brandProduct}` : segs[0];
-  out.color = segs.length > 1 ? segs[segs.length - 1] : null;
-
-  // candidate devices segment is the one right after the brand (index 2)
-  let devicesSegIdx = -1;
-  if (segs.length >= 4) {
-    const parts = segs[2].split('/').map(s => s.trim()).filter(Boolean);
-    const matched = parts
-      .map(p => deviceByLower.get(p.toLowerCase()))
-      .filter(Boolean);
-    if (matched.length > 0) {
-      out.devices = matched;
-      devicesSegIdx = 2;
-    }
-  }
-
-  const nameParts = [];
-  for (let i = 1; i < segs.length - 1; i++) {
-    if (i === devicesSegIdx) continue;
-    nameParts.push(segs[i].replace(/\s*\([^)]*\)\s*/g, '').trim());
-  }
-  out.name = nameParts.join(' ') || brandProduct || segs[0];
-  return out;
-}
 
 // POST /api/purchases/parse-koff  { data: <base64 xlsx> }
 router.post('/parse-koff', (req, res) => {
   if (!req.body.data) return res.status(400).json({ error: 'No file data received' });
-  let workbook;
   try {
-    workbook = XLSX.read(Buffer.from(req.body.data, 'base64'), { type: 'buffer' });
+    res.json({ rows: koffParser.parse(req.body.data, db) });
   } catch (e) {
-    return res.status(400).json({ error: 'Could not read xlsx file: ' + e.message });
+    return res.status(400).json({ error: e.message });
   }
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  if (!sheet) return res.status(400).json({ error: 'xlsx file has no sheets' });
-  // raw: true so long EANs come back as exact numbers instead of "5.94942E+12" text
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
-  const code = v => typeof v === 'number' ? String(v) : String(v ?? '').trim();
-
-  const deviceByLower = new Map(
-    db.prepare('SELECT id, name FROM devices').all().map(d => [d.name.toLowerCase(), { id: d.id, name: d.name }])
-  );
-  const brandByName = new Map(db.prepare('SELECT id, name, price, cost FROM brands').all().map(b => [b.name, b]));
-  const productBySku = new Map(
-    db.prepare('SELECT * FROM products').all().map(p => [String(p.sku).toLowerCase(), p])
-  );
-
-  const parsed = [];
-  for (let i = 1; i < rows.length; i++) { // row 0 = headers
-    const r = rows[i];
-    const supplierName = String(r[1] || '').trim();   // column B
-    const sku = code(r[2]);                           // column C
-    const ean = code(r[3]);                           // column D
-    const qty = parseInt(r[4], 10) || 0;              // column E
-    const cost = parseFloat(String(r[6] ?? '').replace(',', '.')) || 0; // column G
-    if (!supplierName && !sku && !ean && !qty) continue; // skip empty rows
-    const parsedRow = parseKoffName(supplierName, deviceByLower);
-    const brand = parsedRow.brand ? brandByName.get(parsedRow.brand) : null;
-    if (brand && brand.price != null) parsedRow.brand_price = brand.price;
-    const existing = sku ? productBySku.get(sku.toLowerCase()) || null : null;
-    parsed.push({
-      supplier_name: supplierName,
-      sku, ean, quantity: qty, cost,
-      parsed: parsedRow,
-      existing: existing ? {
-        id: existing.id, name: existing.name, sku: existing.sku, ean: existing.ean,
-        quantity: existing.quantity, cost: existing.cost, supplier_name: existing.supplier_name
-      } : null
-    });
-  }
-  res.json({ rows: parsed });
 });
 
 // ---------- list ----------
