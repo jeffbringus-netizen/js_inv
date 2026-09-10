@@ -5,7 +5,7 @@
 // exact model value; quantity and every other product field are unchanged.
 const XLSX = require('xlsx');
 const path = require('path');
-const db = require('./db');
+const db = require('../db');
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');

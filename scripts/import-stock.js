@@ -8,7 +8,7 @@
 //   M purchase price w/o VAT | O product name / supplier's product name
 //   P supplier ("Full Name, City, Country")
 const XLSX = require('xlsx');
-const db = require('./db');
+const db = require('../db');
 
 const FILE = 'stock.xlsx';
 
