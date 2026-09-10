@@ -84,7 +84,7 @@ router.post('/complete', (req, res) => {
   const createdProducts = []; // full data of newly created products (for the history table)
   const updatedProducts = []; // existing products with before/after values (for the history table)
   const findOrCreate = (table, name, createdKey) => {
-    const row = db.prepare(`SELECT id FROM ${table} WHERE name = ?`).get(name);
+    const row = db.prepare(`SELECT id FROM ${table} WHERE name = ? COLLATE NOCASE`).get(name);
     if (row) return row.id;
     const id = db.prepare(`INSERT INTO ${table} (name) VALUES (?)`).run(name).lastInsertRowid;
     createdEntities[createdKey].push(name);
@@ -93,7 +93,7 @@ router.post('/complete', (req, res) => {
 
   // new brands are created with a suggested sale price taken from their products
   const findOrCreateBrand = name => {
-    const row = db.prepare('SELECT id FROM brands WHERE name = ?').get(name);
+    const row = db.prepare('SELECT id FROM brands WHERE name = ? COLLATE NOCASE').get(name);
     if (row) return row.id;
     const id = db.prepare('INSERT INTO brands (name, price) VALUES (?, ?)')
       .run(name, brand_prices[name] != null ? brand_prices[name] : null).lastInsertRowid;
@@ -166,7 +166,7 @@ router.post('/complete', (req, res) => {
         linkPp.run(purchaseOrderId, info.lastInsertRowid, np.quantity, np.sort ?? 0, 1);
         const deviceIds = [...(np.device_ids || [])];
         for (const name of np.devices || []) {
-          const existing = db.prepare('SELECT id FROM devices WHERE name = ?').get(name);
+          const existing = db.prepare('SELECT id FROM devices WHERE name = ? COLLATE NOCASE').get(name);
           const deviceId = existing ? existing.id
             : db.prepare('INSERT INTO devices (name, year) VALUES (?, ?)').run(name, new Date().getFullYear()).lastInsertRowid;
           if (!existing) createdEntities.devices.push(name);

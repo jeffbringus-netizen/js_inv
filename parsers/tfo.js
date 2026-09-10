@@ -172,12 +172,25 @@ function parseName(originalName, db) {
     tag_text: colorRecord.tag_text,
     tag_border: colorRecord.tag_border
   });
-  const deviceRows = db.prepare('SELECT id, name FROM devices').all();
+  const deviceRows = db.prepare('SELECT id, name, short_name FROM devices').all();
+  // match by full name OR short name; full names win when a short name would
+  // collide with another device's full name
   const deviceMap = new Map(deviceRows.map(device => [normalize(device.name), device]));
+  for (const device of deviceRows) {
+    if (device.short_name) {
+      const key = normalize(device.short_name);
+      if (!deviceMap.has(key)) deviceMap.set(key, device);
+    }
+  }
+  const seenDeviceIds = new Set();
   for (const deviceText of devices) {
     const device = deviceMap.get(normalize(deviceText));
-    if (device) parsed.devices.push(device);
-    else parsed.compatible_devices.push(deviceText);
+    if (device && !seenDeviceIds.has(device.id)) {
+      seenDeviceIds.add(device.id); // dedupe: full and short name may hit the same device
+      parsed.devices.push(device);
+    } else if (!device) {
+      parsed.compatible_devices.push(deviceText);
+    }
   }
   if (devices.length) {
     const firstDevice = devices[0].replace(/\b(?:4G|5G|global|eu|us)\b/gi, '').trim();

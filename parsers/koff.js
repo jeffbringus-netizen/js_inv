@@ -15,10 +15,19 @@ function parse(data, db) {
   // raw: true keeps long EANs from being returned as scientific notation.
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
   const code = v => typeof v === 'number' ? String(v) : String(v ?? '').trim();
-  const deviceByLower = new Map(
-    db.prepare('SELECT id, name FROM devices').all()
-      .map(d => [d.name.toLowerCase(), { id: d.id, name: d.name }])
-  );
+  // devices match by full name OR short name ("Samsung Galaxy S22 / S23" hits
+  // "Samsung Galaxy S22" by name and "Samsung Galaxy S23" by short "S23");
+  // full names win when a short name would collide with another device's name
+  const deviceByLower = new Map();
+  for (const d of db.prepare('SELECT id, name, short_name FROM devices').all()) {
+    deviceByLower.set(d.name.toLowerCase(), { id: d.id, name: d.name });
+  }
+  for (const d of db.prepare('SELECT id, name, short_name FROM devices').all()) {
+    if (d.short_name) {
+      const key = d.short_name.toLowerCase();
+      if (!deviceByLower.has(key)) deviceByLower.set(key, { id: d.id, name: d.name });
+    }
+  }
   const brandByName = new Map(db.prepare('SELECT id, name, price, cost FROM brands').all().map(b => [b.name, b]));
   const productBySku = new Map(
     db.prepare('SELECT * FROM products').all().map(p => [String(p.sku).toLowerCase(), p])
@@ -73,8 +82,13 @@ function parseName(name, deviceByLower) {
 
   let devicesSegment = -1;
   if (segments.length >= 4) {
-    const matched = segments[2].split('/').map(s => s.trim()).filter(Boolean)
-      .map(device => deviceByLower.get(device.toLowerCase())).filter(Boolean);
+    const matched = [];
+    const seenIds = new Set();
+    for (const part of segments[2].split('/').map(s => s.trim()).filter(Boolean)) {
+      const d = deviceByLower.get(part.toLowerCase());
+      // dedupe: full and short name may hit the same device
+      if (d && !seenIds.has(d.id)) { seenIds.add(d.id); matched.push(d); }
+    }
     if (matched.length > 0) {
       out.devices = matched;
       devicesSegment = 2;

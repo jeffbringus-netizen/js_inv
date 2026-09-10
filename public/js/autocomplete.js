@@ -118,10 +118,12 @@ export function createAutocomplete(container, type, onChange) {
       if (fn === null) return;
       body.full_name = fn || q;
     }
-    const created = await fetch(`/api/entities/${type}`, {
+    const res = await fetch(`/api/entities/${type}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-    }).then(r => r.json());
-    select(created);
+    });
+    const data = await res.json().catch(() => ({}));
+    // 409 duplicates carry the existing record — select it instead of failing
+    select(data.existing || data);
   });
 
   listEl.addEventListener('mousedown', e => {

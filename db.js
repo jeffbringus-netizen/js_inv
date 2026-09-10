@@ -168,7 +168,7 @@ function findOrCreateColor(value, createdList) {
     return Number(value);
   }
   const name = String(value).trim();
-  const existing = db.prepare('SELECT id FROM colors WHERE name = ?').get(name);
+  const existing = db.prepare('SELECT id FROM colors WHERE name = ? COLLATE NOCASE').get(name);
   if (existing) return existing.id;
   const row = db.prepare('SELECT id, name, tag_color, tag_text, tag_border FROM colors WHERE id = ?')
     .get(db.prepare('INSERT INTO colors (name) VALUES (?)').run(name).lastInsertRowid);

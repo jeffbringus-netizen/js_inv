@@ -173,6 +173,17 @@ router.put('/:type/:id', (req, res) => {
   try {
     const before = db.prepare(`SELECT * FROM ${t.table} WHERE id = ?`).get(Number(req.params.id));
     if (!before) return res.status(404).json({ error: 'Record not found' });
+    // case-insensitive uniqueness against OTHER records (own name may change case)
+    const dupOf = (field, value) => value == null || value === '' ? null
+      : db.prepare(`SELECT * FROM ${t.table} WHERE ${field} = ? COLLATE NOCASE AND id != ?`).get(value, Number(req.params.id));
+    const dup = dupOf('name', req.body.name !== undefined ? req.body.name : before.name)
+      || dupOf('full_name', req.body.full_name !== undefined ? req.body.full_name : before.full_name);
+    if (dup) {
+      return res.status(409).json({
+        error: `${req.params.type.slice(0, -1)} "${dup.name}" already exists`,
+        existing: dup
+      });
+    }
     const info = db.prepare(`UPDATE ${t.table} SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
     if (info.changes === 0) return res.status(404).json({ error: 'Record not found' });
     const after = db.prepare(`SELECT * FROM ${t.table} WHERE id = ?`).get(Number(req.params.id));
@@ -255,6 +266,15 @@ router.post('/:type', (req, res) => {  const t = TYPES[req.params.type];
   for (const f of t.fields) {
     if (body[f] !== undefined) { cols.push(f); vals.push(body[f]); }
   }
+  // entity names are unique per type, case-insensitively ("Honor 400 lite" == "Honor 400 Lite")
+  const dup = db.prepare(`SELECT * FROM ${t.table} WHERE name = ? COLLATE NOCASE`).get(body.name)
+    || (body.full_name ? db.prepare(`SELECT * FROM ${t.table} WHERE full_name = ? COLLATE NOCASE`).get(body.full_name) : null);
+  if (dup) {
+    return res.status(409).json({
+      error: `${req.params.type.slice(0, -1)} "${dup.name}" already exists`,
+      existing: dup
+    });
+  }
   try {
     const info = db.prepare(`INSERT INTO ${t.table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...vals);
     const row = db.prepare(`SELECT * FROM ${t.table} WHERE id = ?`).get(info.lastInsertRowid);
@@ -262,8 +282,11 @@ router.post('/:type', (req, res) => {  const t = TYPES[req.params.type];
     res.status(201).json(row);
   } catch (e) {
     if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-      const existing = db.prepare(`SELECT * FROM ${t.table} WHERE name = ?`).get(body.name);
-      return res.status(200).json(existing);
+      const existing = db.prepare(`SELECT * FROM ${t.table} WHERE name = ? COLLATE NOCASE`).get(body.name);
+      return res.status(409).json({
+        error: `${req.params.type.slice(0, -1)} "${existing ? existing.name : body.name}" already exists`,
+        existing: existing || null
+      });
     }
     if (e.code === 'SQLITE_CONSTRAINT_NOTNULL') {
       const column = (e.message || '').split(': ').pop();
