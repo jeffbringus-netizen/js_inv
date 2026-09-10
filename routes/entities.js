@@ -111,16 +111,52 @@ router.delete('/:type/:id/products/:pid', (req, res) => {
   const info = link.unlink().run(Number(req.params.id), Number(req.params.pid));
   if (info.changes === 0) return res.status(404).json({ error: 'Product is not linked to this entity' });
   const entity = db.prepare(`SELECT name FROM ${TYPES[req.params.type].table} WHERE id = ?`).get(Number(req.params.id));
-  const product = db.prepare('SELECT name FROM products WHERE id = ?').get(Number(req.params.pid));
-  if (entity && product) {
+  const removed = productById(Number(req.params.pid));
+  if (entity && removed) {
     logHistory({
       entity_type: req.params.type, entity_id: Number(req.params.id), action: 'update',
       label: entity.name,
-      changes: { products: { old: `linked to "${product.name}"`, new: 'removed' } },
-      snapshot: { note: `Removed from product "${product.name}"` }
+      changes: { removed: [productLabel(removed)] },
+      snapshot: { removed: [removed], all: linkedProductRows(req.params.type, Number(req.params.id)) }
     });
   }
   res.json({ ok: true });
+});
+
+// PUT /api/entities/devices/:id/products — add/remove products on a device in one action
+// { add: [productIds], remove: [productIds] }
+router.put('/:type/:id/products', (req, res) => {
+  const type = req.params.type;
+  if (type !== 'devices') return res.status(400).json({ error: 'Only devices support product sync' });
+  const id = Number(req.params.id);
+  const entity = db.prepare('SELECT id, name FROM devices WHERE id = ?').get(id);
+  if (!entity) return res.status(404).json({ error: 'Record not found' });
+  const add = Array.isArray(req.body.add) ? req.body.add.map(Number) : [];
+  const remove = Array.isArray(req.body.remove) ? req.body.remove.map(Number) : [];
+  const linked = new Set(linkedProductRows(type, id).map(p => p.id));
+  const removedIds = [...new Set(remove)].filter(pid => linked.has(pid));
+  const addedIds = [...new Set(add)].filter(pid => !linked.has(pid) &&
+    db.prepare('SELECT id FROM products WHERE id = ?').get(pid));
+  if (removedIds.length === 0 && addedIds.length === 0) {
+    return res.json({ ok: true, removed: 0, added: 0 });
+  }
+  const del = db.prepare('DELETE FROM product_devices WHERE device_id = ? AND product_id = ?');
+  const ins = db.prepare('INSERT OR IGNORE INTO product_devices (device_id, product_id) VALUES (?, ?)');
+  db.transaction(() => {
+    for (const pid of removedIds) del.run(id, pid);
+    for (const pid of addedIds) ins.run(id, pid);
+  })();
+  const rows = ids => ids.map(pid => productById(pid)).filter(Boolean);
+  const removed = rows(removedIds);
+  const added = rows(addedIds);
+  const changes = {};
+  if (removed.length) changes.removed = removed.map(productLabel);
+  if (added.length) changes.added = added.map(productLabel);
+  logHistory({
+    entity_type: 'devices', entity_id: id, action: 'update', label: entity.name,
+    changes, snapshot: { removed, added, all: linkedProductRows(type, id) }
+  });
+  res.json({ ok: true, removed: removed.length, added: added.length });
 });
 
 // PUT /api/entities/:type/:id — update editable fields
@@ -168,7 +204,8 @@ router.delete('/:type/:id', (req, res) => {
     brands: () => db.prepare('UPDATE products SET brand_id = NULL WHERE brand_id = ?').run(id),
     suppliers: () => db.prepare('UPDATE products SET supplier_id = NULL WHERE supplier_id = ?').run(id),
     devices: () => db.prepare('DELETE FROM product_devices WHERE device_id = ?').run(id),
-    features: () => db.prepare('DELETE FROM product_features WHERE feature_id = ?').run(id)
+    features: () => db.prepare('DELETE FROM product_features WHERE feature_id = ?').run(id),
+    colors: () => db.prepare('UPDATE products SET color_id = NULL WHERE color_id = ?').run(id)
   }[type];
   try {
     const before = db.prepare(`SELECT * FROM ${t.table} WHERE id = ?`).get(id);
@@ -181,7 +218,7 @@ router.delete('/:type/:id', (req, res) => {
     })();
     logHistory({
       entity_type: type, entity_id: id, action: 'delete', label: before.name,
-      snapshot: { ...before, product_count: countList.length, products: countList.map(p => p.name).slice(0, 50) }
+      snapshot: { ...before, product_count: countList.length, products: countList.slice(0, 50) }
     });
     res.json({ ok: true });
   } catch (e) {
@@ -192,7 +229,18 @@ router.delete('/:type/:id', (req, res) => {
 
 function linkListSql(type) {
   return (LINKED_PRODUCTS[type] || { list: 'SELECT id, name FROM products WHERE 0' }).list
-    .replace(/SELECT p\.id, p\.model, p\.name, p\.sku, p\.ean, p\.quantity/, 'SELECT p.id, p.name');
+    .replace(/SELECT p\.id, p\.model, p\.name, p\.sku, p\.ean, p\.quantity/, 'SELECT p.id, p.model, p.name, p.sku, p.ean');
+}
+
+const productLabel = p => p.model ? `${p.model} - ${p.name}` : p.name;
+
+function productById(id) {
+  return db.prepare('SELECT id, model, name, sku, ean FROM products WHERE id = ?').get(id);
+}
+
+function linkedProductRows(type, id) {
+  if (!LINKED_PRODUCTS[type]) return [];
+  return db.prepare(linkListSql(type)).all(id);
 }
 
 router.post('/:type', (req, res) => {  const t = TYPES[req.params.type];

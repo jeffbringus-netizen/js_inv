@@ -107,7 +107,7 @@ router.put('/:id', (req, res) => {
   if (Object.keys(changes).length) {
     logHistory({
       entity_type: 'sales', entity_id: order.id, action: 'update', label: `Sale order #${order.id}`,
-      changes, snapshot: { customer: order.customer, items: beforeItems }
+      changes, snapshot: { customer: order.customer, items: beforeItems, new_items: afterItems }
     });
   }
   res.json({ ok: true });

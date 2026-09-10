@@ -6,11 +6,13 @@ const tfoParser = require('../parsers/tfo');
 
 const router = express.Router();
 
-function resolveColorId(value) {
+function resolveColorId(value, createdList) {
   if (!value) return null;
   const existing = db.prepare('SELECT id FROM colors WHERE name = ?').get(String(value).trim());
   if (existing) return existing.id;
-  return db.prepare('INSERT INTO colors (name) VALUES (?)').run(String(value).trim()).lastInsertRowid;
+  const id = db.prepare('INSERT INTO colors (name) VALUES (?)').run(String(value).trim()).lastInsertRowid;
+  if (createdList) createdList.push(db.prepare('SELECT name, tag_color, tag_text, tag_border FROM colors WHERE id = ?').get(id));
+  return id;
 }
 
 // POST /api/purchases/parse-koff  { data: <base64 xlsx> }
@@ -84,7 +86,9 @@ router.post('/complete', (req, res) => {
 
   // new brands are created with a suggested sale price taken from their products;
   // implicitly created entities are tracked so the import history lists them
-  const createdEntities = { brands: [], categories: [], locations: [] };
+  const createdEntities = { brands: [], categories: [], locations: [], colors: [], devices: [], features: [] };
+  const createdProducts = []; // full data of newly created products (for the history table)
+  const updatedProducts = []; // existing products with before/after values (for the history table)
   const findOrCreate = (table, name, createdKey) => {
     const row = db.prepare(`SELECT id FROM ${table} WHERE name = ?`).get(name);
     if (row) return row.id;
@@ -120,38 +124,65 @@ router.post('/complete', (req, res) => {
       for (const u of updates) {
         const p = db.prepare('SELECT * FROM products WHERE id = ?').get(u.product_id);
         const updateFields = u.update_fields || { ean: true, cost: true, supplier_name: true };
+        const finalEan = updateFields.ean ? (u.ean || p.ean) : p.ean;
+        const finalCost = updateFields.cost ? (u.cost != null ? u.cost : p.cost) : p.cost;
+        const finalSupplier = updateFields.supplier_name ? (u.supplier_name || p.supplier_name) : p.supplier_name;
         const assignments = ['quantity = quantity + ?', 'is_archived = 0'];
         const values = [u.add_quantity];
         if (updateFields.ean) {
           assignments.push('ean = ?');
-          values.push(u.ean || p.ean);
+          values.push(finalEan);
         }
         if (updateFields.cost) {
           assignments.push('cost = ?');
-          values.push(u.cost != null ? u.cost : p.cost);
+          values.push(finalCost);
         }
         if (updateFields.supplier_name) {
           assignments.push('supplier_name = ?');
-          values.push(u.supplier_name || p.supplier_name);
+          values.push(finalSupplier);
         }
         values.push(u.product_id);
         db.prepare(`UPDATE products SET ${assignments.join(', ')} WHERE id = ?`).run(...values);
         linkPp.run(purchaseOrderId, u.product_id, u.add_quantity, u.sort ?? 0, 0);
+        const fields = {};
+        if (updateFields.ean && String(p.ean ?? '') !== String(finalEan ?? '')) fields.ean = { old: p.ean, new: finalEan };
+        if (updateFields.cost && Number(p.cost ?? 0) !== Number(finalCost ?? 0)) fields.cost = { old: p.cost, new: finalCost };
+        if (updateFields.supplier_name && String(p.supplier_name ?? '') !== String(finalSupplier ?? '')) fields.supplier_name = { old: p.supplier_name, new: finalSupplier };
+        updatedProducts.push({
+          id: p.id, model: p.model, name: p.name, sku: p.sku,
+          old_quantity: p.quantity, add_quantity: u.add_quantity,
+          ean: finalEan, cost: finalCost, supplier_name: finalSupplier,
+          fields
+        });
       }
 
       for (const np of new_products) {
         const brandId = np.brand ? findOrCreateBrand(np.brand) : null;
         const categoryId = np.category ? findOrCreate('categories', np.category, 'categories') : null;
         const locationId = np.location ? findOrCreate('locations', np.location, 'locations') : null;
-        const colorId = resolveColorId(np.color_id || np.color);
+        const colorId = resolveColorId(np.color_id || np.color, createdEntities.colors);
         const info = db.prepare(`INSERT INTO products
           (model, name, ean, sku, color_id, quantity, price, cost, supplier_name, brand_id, category_id, supplier_id, location_id)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(np.model || null, np.name, np.ean, np.sku, colorId, np.quantity, np.price, np.cost,
                np.supplier_name || null, brandId, categoryId, supplier_id, locationId);
         linkPp.run(purchaseOrderId, info.lastInsertRowid, np.quantity, np.sort ?? 0, 1);
-        for (const deviceId of np.device_ids || []) linkDev.run(info.lastInsertRowid, deviceId);
-        for (const featureId of np.feature_ids || []) linkFeat.run(info.lastInsertRowid, featureId);
+        const deviceIds = [...(np.device_ids || [])];
+        for (const name of np.devices || []) {
+          const existing = db.prepare('SELECT id FROM devices WHERE name = ?').get(name);
+          const deviceId = existing ? existing.id
+            : db.prepare('INSERT INTO devices (name, year) VALUES (?, ?)').run(name, new Date().getFullYear()).lastInsertRowid;
+          if (!existing) createdEntities.devices.push(name);
+          deviceIds.push(deviceId);
+        }
+        for (const deviceId of deviceIds) linkDev.run(info.lastInsertRowid, deviceId);
+        const featureIds = [...(np.feature_ids || [])];
+        for (const name of np.features || []) featureIds.push(findOrCreate('features', name, 'features'));
+        for (const featureId of featureIds) linkFeat.run(info.lastInsertRowid, featureId);
+        createdProducts.push({
+          model: np.model || null, name: np.name, sku: np.sku, ean: np.ean || null,
+          quantity: np.quantity, price: np.price, cost: np.cost
+        });
       }
       return { id: purchaseOrderId, created: new_products.length, updated: updates.length, total };
     })();
@@ -161,11 +192,14 @@ router.post('/complete', (req, res) => {
       label: `Purchase order #${result.id} — ${supplierName}`,
       snapshot: {
         supplier: supplierName, shipping: shipping ?? null, total: result.total,
-        created: new_products.map(np => `${np.name} (${np.sku}) × ${np.quantity}`),
-        updated: updates.map(u => `#${u.product_id} +${u.add_quantity}`),
+        created: createdProducts,
+        updated: updatedProducts,
         created_brands: createdEntities.brands,
         created_categories: createdEntities.categories,
-        created_locations: createdEntities.locations
+        created_locations: createdEntities.locations,
+        created_colors: createdEntities.colors,
+        created_devices: createdEntities.devices,
+        created_features: createdEntities.features
       }
     });
     res.status(201).json(result);

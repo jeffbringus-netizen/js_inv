@@ -145,3 +145,5 @@ body.sidebar-visible #appContent { width: calc(100% - 240px); margin-left: 240px
 .webstock-upload.loaded { border-color: #198754; background: linear-gradient(180deg, #f5fff8, #effaf2); }
 .webstock-upload .file-name { min-height: 1.2em; }
 .webstock-center { text-align: center !important; }
+/* history info modal: plain tables should not end with a dangling divider row */
+#historyInfoBody .table:not(.table-bordered) tr:last-child > td { border-bottom: 0; }

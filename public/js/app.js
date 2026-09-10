@@ -189,21 +189,24 @@ document.querySelectorAll('#productTable th.sortable').forEach(th => {
   });
 });
 
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
+  toast(`Copied: ${text}`);
+}
+
 $('#productRows').addEventListener('click', async e => {
   const code = e.target.closest('.code-badge');
   if (code) {
-    const text = code.textContent.trim();
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-    }
-    toast(`Copied: ${text}`);
+    await copyToClipboard(code.textContent.trim());
     return;
   }
   const fb = e.target.closest('[data-filter]');
@@ -1119,14 +1122,17 @@ const HIST_ACTION_BADGE = {
   create: 'text-bg-success', update: 'text-bg-warning', delete: 'text-bg-danger',
   complete: 'text-bg-success', cancel: 'text-bg-danger', import: 'text-bg-info'
 };
+const HIST_ENTITY_TYPES = ['devices', 'features', 'brands', 'categories', 'locations', 'suppliers', 'colors'];
 const HISTORY_FIELD_LABELS = {
-  model: 'Model', name: 'Name', ean: 'EAN', sku: 'SKU', color: 'Color',
+  model: 'Model', name: 'Name', ean: 'EAN', sku: 'SKU', color: 'Color', color_name: 'Color',
   quantity: 'Quantity', price: 'Price', cost: 'Cost',
   supplier_name: "Supplier's product name", brand: 'Brand', category: 'Category',
   supplier: 'Supplier', location: 'Location', devices: 'Devices', features: 'Features',
   is_archived: 'Archived',
   customer: 'Customer', total: 'Total', status: 'Status', year: 'Year',
-  full_name: 'Full name', products: 'Products', shipping: 'Shipping', is_online: 'Online'
+  full_name: 'Full name', products: 'Products', shipping: 'Shipping', is_online: 'Online',
+  note: 'Note', product_count: 'Product count', short_name: 'Short',
+  brands: 'Brands', categories: 'Categories', locations: 'Locations', colors: 'Colors'
 };
 
 let historyRows = [];
@@ -1144,22 +1150,72 @@ function fmtHistField(k, v) {
 }
 
 function historyChangePreview(h) {
+  // purchase imports: summarize what the import brought in (imports store no changes)
+  if (h.entity_type === 'purchases' && h.snapshot) {
+    const parts = [];
+    if (Array.isArray(h.snapshot.created)) parts.push(`${h.snapshot.created.length} created`);
+    if (Array.isArray(h.snapshot.updated)) parts.push(`${h.snapshot.updated.length} updated`);
+    if (parts.length) return `<div class="small text-muted">${parts.join(' · ')}</div>`;
+  }
+
   if (!h.changes) return '';
   const keys = Object.keys(h.changes);
   if (!keys.length) return '';
+
+  // products added/removed on an entity: first item plus the remaining count
+  if (h.changes.removed || h.changes.added) {
+    const part = (key, word, suffix) => {
+      const arr = h.changes[key];
+      if (!Array.isArray(arr) || !arr.length) return '';
+      const rest = arr.length > 1 ? ` and ${arr.length - 1} ${suffix}` : '';
+      return `<div class="small text-muted">${word}: ${esc(arr[0])}${rest}</div>`;
+    };
+    return part('removed', 'Removed', 'others') + part('added', 'Added', 'more');
+  }
+
   const f = keys[0];
   const c = h.changes[f];
   const label = HISTORY_FIELD_LABELS[f] || f;
-  const oldV = fmtHistField(f, Array.isArray(c.old) ? c.old.join(', ') : c.old);
-  const newV = fmtHistField(f, Array.isArray(c.new) ? c.new.join(', ') : c.new);
+  const val = v => (v === null || v === undefined || v === '') ? '—' : fmtHistField(f, v);
   const extra = keys.length > 1 ? ` <span class="text-muted">(+${keys.length - 1} more)</span>` : '';
-  return `<div class="small text-muted">${esc(label)}: <s>${esc(oldV ?? '—')}</s> → ${esc(newV ?? '—')}${extra}</div>`;
+
+  // single product + entity updates: name the changed fields, exact values on hover
+  const isProductUpdate = h.entity_type === 'products' && h.action === 'update' && h.entity_id !== null;
+  const isEntityUpdate = HIST_ENTITY_TYPES.includes(h.entity_type) && h.action === 'update';
+  if (isProductUpdate || isEntityUpdate) {
+    // unlinking a product stores a sentence, which reads best inline
+    if (isEntityUpdate && keys.length === 1 && keys[0] === 'products') {
+      return `<div class="small text-muted">${esc(label)}: <s>${esc(c.old ?? '—')}</s> → ${esc(c.new ?? '—')}</div>`;
+    }
+    const details = keys.map(k => {
+      const ch = h.changes[k];
+      const oldV = Array.isArray(ch.old) ? ch.old.join(', ') : ch.old;
+      const newV = Array.isArray(ch.new) ? ch.new.join(', ') : ch.new;
+      const fmt = v => (v === null || v === undefined || v === '') ? '—' : fmtHistField(k, v);
+      return `${HISTORY_FIELD_LABELS[k] || k}: ${fmt(oldV)} → ${fmt(newV)}`;
+    }).join('\n');
+    return `<div class="small text-muted" title="${esc(details)}">${keys.map(k => esc(HISTORY_FIELD_LABELS[k] || k)).join(' / ')}</div>`;
+  }
+
+  // mass updates: products can start from different values, so only the new value matters
+  if (h.entity_type === 'products' && h.action === 'update' && h.entity_id === null) {
+    const newV = fmtHistField(f, Array.isArray(c.new) ? c.new.join(', ') : c.new);
+    return `<div class="small text-muted">${esc(label)}: ${esc(newV ?? '—')}${extra}</div>`;
+  }
+
+  const oldV = val(Array.isArray(c.old) ? c.old.join(', ') : c.old);
+  const newV = val(Array.isArray(c.new) ? c.new.join(', ') : c.new);
+  return `<div class="small text-muted">${esc(label)}: <s>${esc(oldV)}</s> → ${esc(newV)}${extra}</div>`;
 }
 
 function histLabelHtml(h) {
   const actionPrefix = h.action === 'create' ? '<strong>Created — </strong>'
     : h.action === 'delete' ? '<strong>Deleted — </strong>'
     : h.action === 'import' ? '<strong>Imported — </strong>'
+    : h.action === 'complete' ? '<strong>Completed — </strong>'
+    : h.action === 'cancel' ? '<strong>Canceled — </strong>'
+    // mass update records already name the action in their label
+    : h.action === 'update' && (h.entity_type === 'sales' || HIST_ENTITY_TYPES.includes(h.entity_type) || (h.entity_type === 'products' && h.entity_id !== null)) ? '<strong>Updated — </strong>'
     : '';
   if (h.entity_type === 'products' && h.label.includes(' — ')) {
     const [model, ...rest] = h.label.split(' — ');
@@ -1187,6 +1243,12 @@ $('#historyRows').addEventListener('click', e => {
   openHistoryInfo(historyRows[Number(btn.closest('tr').dataset.i)]);
 });
 
+$('#historyInfoBody').addEventListener('click', async e => {
+  const code = e.target.closest('.code-badge');
+  if (!code) return;
+  await copyToClipboard(code.textContent.trim());
+});
+
 const historyInfoModal = new bootstrap.Modal('#historyInfoModal');
 
 function historySnapshotValue(v) {
@@ -1203,13 +1265,8 @@ function historySnapshotValue(v) {
   return esc(String(v));
 }
 
-function openHistoryInfo(h) {
-  $('#historyInfoTitle').innerHTML =
-    `<span class="badge ${HIST_TYPE_BADGE[h.entity_type] || 'text-bg-secondary'}">${h.entity_type}</span> ${histLabelHtml(h)}`;
-  let body = `<div class="text-muted small mb-3">${esc(h.created_at)}</div>`;
-  const snap = h.snapshot || {};
-
-  function listDiffCell(oldStr, newStr) {
+// list diff: shared values plain, removed struck, added green bold
+function listDiffCell(oldStr, newStr) {
   const toList = s => String(s ?? '').split(',').map(x => x.trim()).filter(Boolean);
   const oldL = toList(oldStr), newL = toList(newStr);
   const oldSet = new Set(oldL), newSet = new Set(newL);
@@ -1224,7 +1281,327 @@ function openHistoryInfo(h) {
   return parts.length ? parts.join(', ') : '—';
 }
 
-// mass-update records: applied changes + per-product before-values
+// product history modals reuse the products-table look: code badges with
+// click-to-copy, € prices with net value, switch toggles, colored color badge
+const PRODUCT_MODAL_FIELDS = ['model', 'name', 'ean', 'sku', 'color_name', 'quantity', 'price', 'cost',
+  'supplier_name', 'is_online', 'is_archived', 'brand', 'category', 'supplier', 'location', 'devices', 'features'];
+const histEmpty = v => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+
+function histToggle(checked, onLabel, offLabel) {
+  return `<div class="form-check form-switch m-0" title="${checked ? onLabel : offLabel}">
+    <input class="form-check-input" type="checkbox" role="switch" ${checked ? 'checked' : ''} disabled>
+  </div>`;
+}
+
+function histColorBadge(snap, name, faded) {
+  if (histEmpty(name)) return '';
+  const bg = snap.tag_color || '#6c757d', fg = snap.tag_text || '#ffffff', border = snap.tag_border || '#6c757d';
+  return `<span class="badge${faded ? ' opacity-50' : ''}" title="${esc(`background: ${bg} · text: ${fg} · border: ${border}`)}" style="background:${esc(bg)};color:${esc(fg)};border:1px solid ${esc(border)}">${esc(name)}</span>`;
+}
+
+function histProductFieldValue(key, v, snap) {
+  switch (key) {
+    case 'sku':
+      return `<span class="badge text-bg-dark badge-click code-badge" title="Click to copy">${esc(v)}</span>`;
+    case 'ean':
+      return `<span class="badge text-bg-secondary badge-click code-badge" title="Click to copy">${esc(v)}</span>`;
+    case 'color_name':
+      return histColorBadge(snap, v);
+    case 'price':
+      return `<div class="fw-bold">${eur(v)}</div><div class="small text-muted">${eur4(v / 1.2)}</div>`;
+    case 'cost':
+      return eur(v);
+    case 'devices': case 'features':
+      return v.map(x => esc(x.name)).join(', ');
+    case 'is_online':
+      return histToggle(v == 1 || v === '1' || v === true, 'online', 'offline');
+    case 'is_archived':
+      return histToggle(v == 1 || v === '1' || v === true, 'archived', 'active');
+    default:
+      return esc(v);
+  }
+}
+
+function histProductChangeValue(key, change, snap) {
+  const arrow = ' <i class="bi bi-arrow-right"></i> ';
+  switch (key) {
+    case 'devices': case 'features':
+      return listDiffCell(change.old, change.new);
+    case 'sku': case 'ean': {
+      const code = v => `<span class="badge ${key === 'sku' ? 'text-bg-dark' : 'text-bg-secondary'} badge-click code-badge" title="Click to copy">${esc(v)}</span>`;
+      const old = histEmpty(change.old) ? '—' : `<s class="text-muted">${code(change.old)}</s>`;
+      const neu = histEmpty(change.new) ? '—' : code(change.new);
+      return old + arrow + neu;
+    }
+    case 'color_name': {
+      // the snapshot only carries the old color's tag values
+      const old = histEmpty(change.old) ? '—' : `<s class="text-muted">${histColorBadge(snap, change.old, true)}</s>`;
+      const neu = histEmpty(change.new) ? '—' : `<span class="badge text-bg-secondary">${esc(change.new)}</span>`;
+      return old + arrow + neu;
+    }
+    case 'price': {
+      const old = histEmpty(change.old) ? '—' : `<s class="text-muted">${eur(change.old)}</s>`;
+      return `${old}${arrow}<strong>${eur(change.new)}</strong><div class="small text-muted">${eur4(change.new / 1.2)}</div>`;
+    }
+    case 'cost': {
+      const old = histEmpty(change.old) ? '—' : `<s class="text-muted">${eur(change.old)}</s>`;
+      return old + arrow + `<strong>${eur(change.new)}</strong>`;
+    }
+    case 'is_online': case 'is_archived': {
+      const t = v => `<div class="form-check form-switch m-0"><input class="form-check-input" type="checkbox" role="switch" ${(v == 1 || v === '1' || v === true) ? 'checked' : ''} disabled></div>`;
+      return `<div class="d-flex align-items-center gap-2"><span class="opacity-50">${t(change.old)}</span>${arrow}${t(change.new)}</div>`;
+    }
+    default: {
+      const old = histEmpty(change.old) ? '—' : `<s class="text-muted">${esc(change.old)}</s>`;
+      const neu = histEmpty(change.new) ? '—' : `<strong>${esc(change.new)}</strong>`;
+      return old + arrow + neu;
+    }
+  }
+}
+
+function productHistoryBody(h, snap) {
+  const rows = [];
+  for (const key of PRODUCT_MODAL_FIELDS) {
+    if (!(key in snap)) continue;
+    const change = h.changes && h.changes[key];
+    if (!change && histEmpty(snap[key])) continue;
+    const value = change ? histProductChangeValue(key, change, snap) : histProductFieldValue(key, snap[key], snap);
+    rows.push(`<tr><td style="width:220px;">${esc(HISTORY_FIELD_LABELS[key] || key)}</td><td>${value}</td></tr>`);
+  }
+  if (!rows.length) return '<div class="text-muted">No details stored.</div>';
+  const heading = h.action === 'update'
+    ? '<h6 class="mb-2">Data before change <span class="text-muted small">(crossed values were changed)</span></h6>'
+    : `<h6 class="mb-2">Data at time of ${esc(h.action)}</h6>`;
+  return heading + '<table class="table table-sm">' + rows.join('') + '</table>';
+}
+
+// sale orders: items listed like the sale table on the sales page
+function salesHistoryBody(h, snap) {
+  const statusBadge = s => `<span class="badge ${STATUS_BADGE[s] || 'text-bg-secondary'}">${esc(s)}</span>`;
+  let body = '';
+  const custChange = h.changes && h.changes.customer;
+  if (custChange) {
+    body += `<div class="mb-2"><span class="text-muted">Customer:</span> <s class="text-muted">${esc(custChange.old ?? '—')}</s> <i class="bi bi-arrow-right"></i> <strong>${esc(custChange.new ?? '—')}</strong></div>`;
+  } else if (snap.customer != null && snap.customer !== '') {
+    body += `<div class="mb-2"><span class="text-muted">Customer:</span> <strong>${esc(snap.customer)}</strong></div>`;
+  }
+  if (h.changes && h.changes.status) {
+    body += `<div class="mb-2">${statusBadge(h.changes.status.old)} <i class="bi bi-arrow-right"></i> ${statusBadge(h.changes.status.new)}</div>`;
+  } else {
+    const status = h.action === 'complete' ? 'completed' : h.action === 'cancel' ? 'canceled' : 'draft';
+    body += `<div class="mb-2">${statusBadge(status)}</div>`;
+  }
+  // update records carry both item states: removed/changed rows struck, added rows badged
+  const oldItems = Array.isArray(snap.items) ? snap.items : [];
+  const newItems = Array.isArray(snap.new_items) ? snap.new_items : null;
+  let displayItems;
+  if (newItems) {
+    const oldByPid = new Map(oldItems.map(it => [it.product_id, it]));
+    const newByPid = new Map(newItems.map(it => [it.product_id, it]));
+    displayItems = [];
+    for (const pid of new Set([...oldByPid.keys(), ...newByPid.keys()])) {
+      const before = oldByPid.get(pid), after = newByPid.get(pid);
+      if (before && after && before.quantity === after.quantity) displayItems.push({ ...before, state: 'same' });
+      else {
+        if (before) displayItems.push({ ...before, state: 'old' });
+        if (after) displayItems.push({ ...after, state: 'new' });
+      }
+    }
+  } else {
+    displayItems = oldItems.map(it => ({ ...it, state: 'same' }));
+  }
+  if (displayItems.length) {
+    const rows = displayItems.map(it => {
+      const wrap = x => it.state === 'old' ? `<s class="text-muted">${x}</s>` : x;
+      const name = (it.state === 'new' ? '<span class="badge text-bg-success me-1">new</span>' : '') + wrap(esc(it.name));
+      return `<tr>
+        <td>${wrap(esc(it.model || ''))}</td>
+        <td>${name}<div class="small text-muted">${wrap(esc(it.sku || ''))}</div></td>
+        <td>${wrap(it.quantity)}</td>
+        <td>${wrap(eur(it.price))}</td>
+        <td>${wrap(eur(it.price * it.quantity))}</td>
+      </tr>`;
+    }).join('');
+    body += '<table class="table table-sm align-middle"><thead class="table-light"><tr>' +
+      '<th>Model</th><th>Product</th><th style="width:80px;">Qty</th><th>Price</th><th>Line total</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+  } else {
+    body += '<div class="text-muted">No items stored.</div>';
+  }
+  if (snap.total != null) {
+    body += `<div class="text-end fw-bold">Total: <span class="text-success">${eur(snap.total)}</span></div>`;
+  }
+  const extras = [];
+  if (snap.stock_restored !== undefined) {
+    extras.push(`<span class="text-muted">Stock restored:</span> <strong>${snap.stock_restored ? 'yes' : 'no'}</strong>`);
+  }
+  if (extras.length) body += `<div class="mt-2">${extras.join(' &nbsp;·&nbsp; ')}</div>`;
+  return body || '<div class="text-muted">No details stored.</div>';
+}
+
+// entities (devices, brands, colors, …) share the product modal style
+function entityHistoryBody(h, snap) {
+  const isColor = h.entity_type === 'colors';
+  // product link changes: removed / added / resulting full product tables
+  if (snap.removed || snap.added || snap.all) {
+    const addedIds = new Set(histArrHas(snap.added) ? snap.added.map(p => p.id) : []);
+    let out = '';
+    if (histArrHas(snap.removed)) out += histProductTable('Removed products', snap.removed);
+    if (histArrHas(snap.added)) out += histProductTable('Added products', snap.added);
+    if (histArrHas(snap.all)) out += histProductTable('All products', snap.all, addedIds);
+    return out || '<div class="text-muted">No details stored.</div>';
+  }
+  const row = (key, value) => `<tr><td style="width:220px;">${esc(HISTORY_FIELD_LABELS[key] || key)}</td><td>${value}</td></tr>`;
+  const rows = [];
+  let linkedProducts = null;
+  for (const key of Object.keys(snap)) {
+    if (key === 'id' || key.endsWith('_id')) continue;
+    if (key === 'products') { linkedProducts = snap.products; continue; }
+    if (key === 'product_count') continue; // redundant when the product table is shown
+    if (isColor && (key === 'name' || key.startsWith('tag_'))) continue; // rendered as the badge row below
+    const change = h.changes && h.changes[key];
+    if (!change && histEmpty(snap[key])) continue;
+    rows.push(row(key, histEntityValue(key, snap[key], change)));
+  }
+  if (isColor) {
+    const changed = h.changes && ['name', 'tag_color', 'tag_text', 'tag_border'].some(k => h.changes[k]);
+    const value = changed
+      ? `<s class="text-muted">${histColorBadge(snap, snap.name, true)}</s> <i class="bi bi-arrow-right"></i> <span class="badge text-bg-secondary">${esc((h.changes.name && h.changes.name.new) || snap.name)}</span>`
+      : histColorBadge(snap, snap.name);
+    rows.unshift(row('color', value));
+  }
+  if (!rows.length && !histArrHas(linkedProducts)) return '<div class="text-muted">No details stored.</div>';
+  const heading = h.action === 'update'
+    ? '<h6 class="mb-2">Data before change <span class="text-muted small">(crossed values were changed)</span></h6>'
+    : `<h6 class="mb-2">Data at time of ${esc(h.action)}</h6>`;
+  let out = heading + (rows.length ? '<table class="table table-sm">' + rows.join('') + '</table>' : '');
+  if (histArrHas(linkedProducts)) {
+    out += histProductTable('Linked products', linkedProducts);
+  }
+  return out;
+}
+
+const histArrHas = a => Array.isArray(a) && a.length > 0;
+
+// product table used by entity history modals; products in newIds get the green
+// "new" badge (e.g. products just added to a device)
+function histProductTable(title, products, newIds = null) {
+  const rows = products.map(p => `
+    <tr>
+      <td>${esc(p.model || '')}</td>
+      <td>${newIds && newIds.has(p.id) ? '<span class="badge text-bg-success me-1">new</span>' : ''}${esc(p.name)}</td>
+      <td>
+        <div class="d-flex flex-column gap-1 align-items-start">
+          <span class="badge text-bg-dark badge-click code-badge" title="Click to copy">${esc(p.sku)}</span>
+          ${p.ean ? `<span class="badge text-bg-secondary badge-click code-badge" title="Click to copy">${esc(p.ean)}</span>` : ''}
+        </div>
+      </td>
+    </tr>`).join('');
+  return `<h6 class="mt-3 mb-1">${esc(title)}</h6>
+    <table class="table table-sm align-middle">
+      <thead class="table-light"><tr><th style="width:90px;">Model</th><th>Product</th><th style="width:170px;">Codes</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function histEntityValue(key, v, change) {
+  const fmt = x => esc(fmtHistField(key, x));
+  if (change) {
+    const old = histEmpty(change.old) ? '—' : `<s class="text-muted">${fmt(change.old)}</s>`;
+    return `${old} <i class="bi bi-arrow-right"></i> <strong>${fmt(change.new)}</strong>`;
+  }
+  return fmt(v);
+}
+
+// purchase imports: new entity badges, updated products, then all products —
+// badge colors follow the products page table
+function purchasesHistoryBody(h, snap) {
+  let body = `<div class="mb-2"><span class="text-muted">Supplier:</span> <strong>${esc(snap.supplier)}</strong></div>`;
+
+  const ENTITY_BADGE = {
+    created_brands: () => '<span class="badge filter-badge">',
+    created_categories: () => '<span class="badge filter-badge">',
+    created_locations: () => '<span class="badge filter-badge">',
+    created_devices: () => '<span class="badge text-bg-primary">',
+    created_features: () => '<span class="badge text-bg-success">'
+  };
+  const badgeGroups = [];
+  for (const key of Object.keys(ENTITY_BADGE)) {
+    if (histArrHas(snap[key])) badgeGroups.push(`<span class="text-muted small me-1">${HISTORY_FIELD_LABELS[key.replace('created_', '')] || key}:</span> ` +
+      snap[key].map(name => `${ENTITY_BADGE[key]()}${esc(name)}</span>`).join(' '));
+  }
+  if (histArrHas(snap.created_colors)) {
+    badgeGroups.push('<span class="text-muted small me-1">Colors:</span> ' + snap.created_colors.map(c => {
+      const col = typeof c === 'string' ? { name: c } : c;
+      return `<span class="badge" style="background:${esc(col.tag_color || '#6c757d')};color:${esc(col.tag_text || '#fff')};border:1px solid ${esc(col.tag_border || '#6c757d')}">${esc(col.name)}</span>`;
+    }).join(' '));
+  }
+  if (badgeGroups.length) body += `<div class="mb-2">${badgeGroups.join('<br>')}</div>`;
+
+  if (histArrHas(snap.updated)) {
+    const diff = (pair, fmt = x => x) => pair
+      ? `<s class="text-muted">${esc(fmt(pair.old) ?? '—')}</s> <i class="bi bi-arrow-right"></i> ${esc(fmt(pair.new) ?? '—')}`
+      : '—';
+    const plain = v => esc(v ?? '—');
+    const rows = snap.updated.map(u => `
+      <tr>
+        <td>${esc(u.name)}<div class="small text-muted">${esc(u.sku)}</div></td>
+        <td class="small">${u.fields && u.fields.supplier_name ? diff(u.fields.supplier_name) : plain(u.supplier_name)}</td>
+        <td class="small">${u.fields && u.fields.ean ? diff(u.fields.ean) : plain(u.ean)}</td>
+        <td class="small">${u.fields && u.fields.cost ? diff(u.fields.cost, eur) : eur(u.cost)}</td>
+        <td class="text-nowrap"><s class="text-muted">${u.old_quantity}</s> <i class="bi bi-arrow-right"></i> <strong>${u.old_quantity + u.add_quantity}</strong> <span class="badge text-bg-secondary">+${u.add_quantity}</span></td>
+      </tr>`).join('');
+    body += `<h6 class="mt-3 mb-1">Updated products</h6>
+      <div class="table-responsive"><table class="table table-sm table-bordered align-middle">
+        <thead class="table-light"><tr><th>Product</th><th>Supplier's product name</th><th>EAN</th><th>Cost</th><th>Quantity</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  }
+
+  const allProducts = [
+    ...(histArrHas(snap.updated) ? snap.updated.map(u => ({
+      model: u.model, name: u.name, sku: u.sku, ean: u.ean, cost: u.cost, quantity: u.old_quantity + u.add_quantity, is_new: false
+    })) : []),
+    ...(histArrHas(snap.created) ? snap.created.map(p => ({ ...p, is_new: true })) : [])
+  ];
+  if (allProducts.length) {
+    const rows = allProducts.map(it => `
+      <tr>
+        <td>${esc(it.model || '')}</td>
+        <td>${it.is_new ? '<span class="badge text-bg-success me-1">new</span>' : ''}${esc(it.name)}</td>
+        <td>
+          <div class="d-flex flex-column gap-1 align-items-start">
+            <span class="badge text-bg-dark">${esc(it.sku)}</span>
+            ${it.ean ? `<span class="badge text-bg-secondary">${esc(it.ean)}</span>` : ''}
+          </div>
+        </td>
+        <td>${it.quantity}</td>
+        <td class="text-nowrap">${eur(it.cost)}</td>
+        <td class="text-nowrap">${eur(it.cost * it.quantity)}</td>
+      </tr>`).join('');
+    body += `<h6 class="mt-3 mb-1">All products</h6>
+      <table class="table table-sm align-middle">
+        <thead class="table-light"><tr><th style="width:90px;">Model</th><th>Product</th><th>Codes</th><th style="width:70px;">Qty</th><th>Cost</th><th>Line total</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+  if (snap.total != null) {
+    body += `<div class="text-end">
+      <div>Products: <span class="fw-bold">${eur(snap.total)}</span></div>
+      <div>Shipping: <span>${snap.shipping == null ? '—' : eur(snap.shipping)}</span></div>
+      <div class="fw-bold text-success">Total: ${eur(snap.total + (snap.shipping || 0))}</div>
+    </div>`;
+  }
+  return body || '<div class="text-muted">No details stored.</div>';
+}
+
+function openHistoryInfo(h) {
+  $('#historyInfoTitle').innerHTML =
+    `<span class="badge ${HIST_TYPE_BADGE[h.entity_type] || 'text-bg-secondary'}">${h.entity_type}</span> ${histLabelHtml(h)}`;
+  let body = `<div class="text-muted small mb-3">${esc(h.created_at)}</div>`;
+  const snap = h.snapshot || {};
+
+  // mass-update records: applied changes + per-product before-values
   if (snap.applied && Array.isArray(snap.before)) {
     const appliedKeys = Object.keys(snap.applied);
     const normCmp = (k, v) => {
@@ -1248,11 +1625,43 @@ function openHistoryInfo(h) {
         const isList = k === 'devices' || k === 'features';
         const oldV = fmtHistField(k, b[k]);
         const newV = fmtHistField(k, snap.applied[k]);
-        body += `<td>${isList ? listDiffCell(b[k], snap.applied[k]) : (normCmp(k, b[k]) !== normCmp(k, snap.applied[k]) ? diffCell(oldV, newV) : esc(oldV ?? '—') || '—')}</td>`;
+        body += `<td>${isList ? listDiffCell(b[k], snap.applied[k]) : (normCmp(k, b[k]) !== normCmp(k, snap.applied[k]) ? diffCell(oldV, newV, false) : esc(oldV ?? '—') || '—')}</td>`;
       }
       body += '</tr>';
     }
     body += '</tbody></table></div>';
+    $('#historyInfoBody').innerHTML = body;
+    historyInfoModal.show();
+    return;
+  }
+
+  // product records reuse the products-table look (badges, toggles, € prices)
+  if (h.entity_type === 'products') {
+    body += productHistoryBody(h, snap);
+    $('#historyInfoBody').innerHTML = body;
+    historyInfoModal.show();
+    return;
+  }
+
+  // sale orders list their items like the sale table on the sales page
+  if (h.entity_type === 'sales') {
+    body += salesHistoryBody(h, snap);
+    $('#historyInfoBody').innerHTML = body;
+    historyInfoModal.show();
+    return;
+  }
+
+  // entities share the product modal style
+  if (HIST_ENTITY_TYPES.includes(h.entity_type)) {
+    body += entityHistoryBody(h, snap);
+    $('#historyInfoBody').innerHTML = body;
+    historyInfoModal.show();
+    return;
+  }
+
+  // purchase imports: supplier, product lists and totals
+  if (h.entity_type === 'purchases') {
+    body += purchasesHistoryBody(h, snap);
     $('#historyInfoBody').innerHTML = body;
     historyInfoModal.show();
     return;
