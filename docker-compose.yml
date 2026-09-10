@@ -14,6 +14,7 @@ services:
       IS_DOCKER: "1"
       PORT: "3000"
       LOG_TIMEZONE: ${LOG_TIMEZONE:-Europe/Sofia}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Sofia}
       DB_PATH: /app/data/inventory.db
       BACKUP_DIR: /app/backups
 

@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { logHistory } = require('../db');
+const { logHistory, findOrCreateColor } = require('../db');
 
 const router = express.Router();
 
@@ -49,12 +49,8 @@ function getFullProduct(id) {
 }
 
 function resolveColorId(value) {
-  if (value === null || value === undefined || value === '') return null;
-  if (Number.isInteger(Number(value)) && db.prepare('SELECT id FROM colors WHERE id = ?').get(Number(value))) return Number(value);
-  const name = String(value).trim();
-  const existing = db.prepare('SELECT id FROM colors WHERE name = ?').get(name);
-  if (existing) return existing.id;
-  return db.prepare('INSERT INTO colors (name) VALUES (?)').run(name).lastInsertRowid;
+  // creating a color here is logged by the db controller (colors/create)
+  return findOrCreateColor(value);
 }
 
 const HISTORY_FIELDS = ['model', 'name', 'ean', 'sku', 'color_name', 'quantity', 'price', 'cost',
@@ -80,8 +76,8 @@ router.get('/', (req, res) => {
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 100));
   const sortExpressions = {
-    location: 'l.name', model: 'p.model', name: 'p.name', category: 'c.name',
-    brand: 'b.name', sku: 'p.sku', color: 'col.name', quantity: 'p.quantity',
+    location: 'natural_key(l.name)', model: 'p.model', name: 'p.name', category: 'natural_key(c.name)',
+    brand: 'natural_key(b.name)', sku: 'p.sku', color: 'natural_key(col.name)', quantity: 'p.quantity',
     price: 'p.price', margin: 'CASE WHEN p.cost > 0 THEN (p.price / 1.2) / p.cost END'
   };
   const sortExpression = sortExpressions[req.query.sort] || 'p.id';

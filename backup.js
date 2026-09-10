@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('./db');
+const { logHistory } = require('./db');
 const logger = require('./logger');
 
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(__dirname, 'backups');
@@ -63,9 +64,7 @@ function createBackup(kind) {
 
         // Record the backup in history first, then store the marker including
         // this record so this backup does not cause another automatic backup.
-        db.prepare(`INSERT INTO history (entity_type, entity_id, action, label, changes, snapshot)
-          VALUES ('backups', NULL, 'create', ?, NULL, ?)`)
-          .run(name, JSON.stringify({ kind, size }));
+        logHistory({ entity_type: 'backups', entity_id: null, action: 'create', label: name, snapshot: { kind, size } });
         db.prepare('INSERT INTO app_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
           .run(LAST_ID_KEY, String(maxHistoryId()));
 

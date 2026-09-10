@@ -1,4 +1,4 @@
-const LOG_TIMEZONE = process.env.LOG_TIMEZONE || 'Europe/Sofia';
+const LOG_TIMEZONE = process.env.APP_TIMEZONE || process.env.LOG_TIMEZONE || 'Europe/Sofia';
 
 function timestamp() {
   return new Intl.DateTimeFormat('sv-SE', {

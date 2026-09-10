@@ -19,7 +19,14 @@ app.get('/', (req, res) => {
   res.type('html').send(withConfig);
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders(res, filePath) {
+    // always revalidate code files so browsers never run stale JS/CSS after a deploy
+    if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+}));
 
 // Give mutating API requests human-readable action names. We deliberately do
 // not log request bodies because imports can contain large or sensitive data.

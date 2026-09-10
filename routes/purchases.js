@@ -1,19 +1,11 @@
 const express = require('express');
 const db = require('../db');
-const { logHistory } = require('../db');
+const { logHistory, findOrCreateColor } = require('../db');
+const { toLocaltime } = require('../time');
 const koffParser = require('../parsers/koff');
 const tfoParser = require('../parsers/tfo');
 
 const router = express.Router();
-
-function resolveColorId(value, createdList) {
-  if (!value) return null;
-  const existing = db.prepare('SELECT id FROM colors WHERE name = ?').get(String(value).trim());
-  if (existing) return existing.id;
-  const id = db.prepare('INSERT INTO colors (name) VALUES (?)').run(String(value).trim()).lastInsertRowid;
-  if (createdList) createdList.push(db.prepare('SELECT name, tag_color, tag_text, tag_border FROM colors WHERE id = ?').get(id));
-  return id;
-}
 
 // POST /api/purchases/parse-koff  { data: <base64 xlsx> }
 router.post('/parse-koff', (req, res) => {
@@ -37,20 +29,22 @@ router.post('/parse-tfo', (req, res) => {
 
 // ---------- list ----------
 router.get('/', (req, res) => {
-  res.json(db.prepare(`
-    SELECT po.id, po.total, po.shipping, datetime(po.created_at, 'localtime') AS created_at, s.name AS supplier,
+  const rows = db.prepare(`
+    SELECT po.id, po.total, po.shipping, po.created_at, s.name AS supplier,
       (SELECT COALESCE(SUM(quantity), 0) FROM purchase_products pp WHERE pp.purchase_order_id = po.id) AS item_count
     FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id
-    ORDER BY po.id DESC`).all());
+    ORDER BY po.id DESC`).all();
+  res.json(rows.map(po => ({ ...po, created_at: toLocaltime(po.created_at) })));
 });
 
 // ---------- detail ----------
 router.get('/:id', (req, res) => {
   const po = db.prepare(`
-    SELECT po.id, po.total, po.shipping, datetime(po.created_at, 'localtime') AS created_at, s.name AS supplier
+    SELECT po.id, po.total, po.shipping, po.created_at, s.name AS supplier
     FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id
     WHERE po.id = ?`).get(req.params.id);
   if (!po) return res.status(404).json({ error: 'Purchase order not found' });
+  po.created_at = toLocaltime(po.created_at);
   po.items = db.prepare(`
     SELECT pp.quantity, pp.sort, pp.is_new, p.id AS product_id, p.name, p.sku, p.ean, p.cost
     FROM purchase_products pp JOIN products p ON p.id = pp.product_id
@@ -110,7 +104,10 @@ router.post('/complete', (req, res) => {
   try {
     const result = db.transaction(() => {
       let total = 0;
-      for (const u of updates) total += (u.purchase_price || 0) * u.add_quantity;
+      // Totals reflect what we actually paid the supplier (the xlsx values):
+      // purchase_price is the file cost even when the stored product cost is
+      // deliberately left unchanged — accounting uses the real paid value.
+      for (const u of updates) total += (u.purchase_price ?? u.cost ?? 0) * u.add_quantity;
       for (const np of new_products) total += np.cost * np.quantity;
 
       const purchaseOrderId = db.prepare(
@@ -160,7 +157,7 @@ router.post('/complete', (req, res) => {
         const brandId = np.brand ? findOrCreateBrand(np.brand) : null;
         const categoryId = np.category ? findOrCreate('categories', np.category, 'categories') : null;
         const locationId = np.location ? findOrCreate('locations', np.location, 'locations') : null;
-        const colorId = resolveColorId(np.color_id || np.color, createdEntities.colors);
+        const colorId = findOrCreateColor(np.color_id || np.color, createdEntities.colors);
         const info = db.prepare(`INSERT INTO products
           (model, name, ean, sku, color_id, quantity, price, cost, supplier_name, brand_id, category_id, supplier_id, location_id)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)

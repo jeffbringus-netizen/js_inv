@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../db');
+const { toLocaltime } = require('../time');
 
 const router = express.Router();
 
@@ -11,6 +12,7 @@ router.get('/', (req, res) => {
     : db.prepare('SELECT * FROM history ORDER BY id DESC LIMIT 500').all();
   res.json(rows.map(r => ({
     ...r,
+    created_at: toLocaltime(r.created_at),
     changes: r.changes ? JSON.parse(r.changes) : null,
     snapshot: r.snapshot ? JSON.parse(r.snapshot) : null
   })));

@@ -49,7 +49,7 @@ router.get('/:type', (req, res) => {
     sql += ` WHERE ${t.fields.map(f => `t.${f} LIKE ?`).join(' OR ')}`;
     t.fields.forEach(() => params.push(`%${q}%`));
   }
-  sql += ' ORDER BY t.name';
+  sql += ' ORDER BY natural_key(t.name), t.name';
   if (!paginated) {
     if (!all) sql += ' LIMIT 20';
     res.json(db.prepare(sql).all(...params));
@@ -264,6 +264,10 @@ router.post('/:type', (req, res) => {  const t = TYPES[req.params.type];
     if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       const existing = db.prepare(`SELECT * FROM ${t.table} WHERE name = ?`).get(body.name);
       return res.status(200).json(existing);
+    }
+    if (e.code === 'SQLITE_CONSTRAINT_NOTNULL') {
+      const column = (e.message || '').split(': ').pop();
+      return res.status(400).json({ error: `Missing required field: ${column}` });
     }
     throw e;
   }

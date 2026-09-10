@@ -9,6 +9,14 @@ db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
 
+// Natural sort key: zero-pads every digit run ("A2" -> "A0000000002") so
+// lexicographic ORDER BY behaves like human ordering ("A1" "A2" "A10").
+// Usable in any query: ORDER BY natural_key(column)
+db.function('natural_key', value => {
+  if (value === null || value === undefined) return null;
+  return String(value).replace(/\d+/g, digits => digits.padStart(12, '0'));
+});
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS brands (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,3 +157,23 @@ function logHistory(entry) {
     });
 }
 module.exports.logHistory = logHistory;
+
+// Find a color by id or name, creating it when missing — the single place where
+// colors are implicitly created (product forms, purchase imports).
+// When `createdList` is given (purchase imports), the row is appended there for
+// the import snapshot instead of getting its own history entry.
+function findOrCreateColor(value, createdList) {
+  if (value === null || value === undefined || value === '') return null;
+  if (Number.isInteger(Number(value)) && db.prepare('SELECT id FROM colors WHERE id = ?').get(Number(value))) {
+    return Number(value);
+  }
+  const name = String(value).trim();
+  const existing = db.prepare('SELECT id FROM colors WHERE name = ?').get(name);
+  if (existing) return existing.id;
+  const row = db.prepare('SELECT id, name, tag_color, tag_text, tag_border FROM colors WHERE id = ?')
+    .get(db.prepare('INSERT INTO colors (name) VALUES (?)').run(name).lastInsertRowid);
+  if (createdList) createdList.push({ name: row.name, tag_color: row.tag_color, tag_text: row.tag_text, tag_border: row.tag_border });
+  else logHistory({ entity_type: 'colors', entity_id: row.id, action: 'create', label: row.name, snapshot: row });
+  return row.id;
+}
+module.exports.findOrCreateColor = findOrCreateColor;

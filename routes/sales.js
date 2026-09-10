@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { statusIds, logHistory } = require('../db');
+const { toLocaltime } = require('../time');
 
 const router = express.Router();
 
@@ -14,27 +15,26 @@ const ORDER_ITEMS = `
 
 function getOrder(id) {
   const order = db.prepare(`
-    SELECT o.id, o.customer, o.status_id, s.status, o.total,
-      datetime(o.created_at, 'localtime') AS created_at,
+    SELECT o.id, o.customer, o.status_id, s.status, o.total, o.created_at,
       (SELECT COALESCE(SUM(p.price * op.quantity), 0) FROM sale_products op
         JOIN products p ON p.id = op.product_id WHERE op.order_id = o.id) AS live_total,
       (SELECT COALESCE(SUM(op.quantity), 0) FROM sale_products op WHERE op.order_id = o.id) AS item_count
     FROM sale_orders o JOIN order_status s ON s.id = o.status_id
     WHERE o.id = ?`).get(id);
+  if (order) order.created_at = toLocaltime(order.created_at);
   return order;
 }
 
 // GET /api/orders
 router.get('/', (req, res) => {
   const orders = db.prepare(`
-    SELECT o.id, o.customer, s.status, o.total,
-      datetime(o.created_at, 'localtime') AS created_at,
+    SELECT o.id, o.customer, s.status, o.total, o.created_at,
       (SELECT COALESCE(SUM(p.price * op.quantity), 0) FROM sale_products op
         JOIN products p ON p.id = op.product_id WHERE op.order_id = o.id) AS live_total,
       (SELECT COALESCE(SUM(op.quantity), 0) FROM sale_products op WHERE op.order_id = o.id) AS item_count
     FROM sale_orders o JOIN order_status s ON s.id = o.status_id
     ORDER BY o.id DESC`).all();
-  res.json(orders);
+  res.json(orders.map(o => ({ ...o, created_at: toLocaltime(o.created_at) })));
 });
 
 // GET /api/orders/:id
