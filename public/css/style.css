@@ -147,3 +147,5 @@ body.sidebar-visible #appContent { width: calc(100% - 240px); margin-left: 240px
 .webstock-center { text-align: center !important; }
 /* history info modal: plain tables should not end with a dangling divider row */
 #historyInfoBody .table:not(.table-bordered) tr:last-child > td { border-bottom: 0; }
+/* linked-products modal: no dangling divider after the last product row */
+#entityProductsModal .table tr:last-child > td { border-bottom: 0; }

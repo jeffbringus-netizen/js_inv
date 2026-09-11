@@ -123,6 +123,12 @@ function parseName(originalName, db) {
     if (baseBrands.length) parsed.brand = baseBrands[0].name;
   }
 
+  // bulk packaging (10in1) gets its own brand entry so single-package and
+  // bulk prices stay separate: "OG Premium" vs "OG Premium (bulk)"
+  if (parsed.brand && /\b10\s*in\s*1\b/i.test(source) && !/\(bulk\)$/.test(parsed.brand)) {
+    parsed.brand = `${parsed.brand} (bulk)`;
+  }
+
   for (const [type, pattern] of PRODUCT_TYPES) {
     if (pattern.test(source)) {
       parsed.product_type = type;
