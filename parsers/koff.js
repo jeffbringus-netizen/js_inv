@@ -91,4 +91,4 @@ function parseName(name, deviceIndex) {
   return out;
 }
 
-module.exports = { parse };
+module.exports = { parse, parseName };

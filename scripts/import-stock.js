@@ -74,7 +74,7 @@ function findOrCreateDevice(name) {
   return row.id;
 }
 
-const stats = { imported: 0, skipped: 0, mergedDuplicates: 0, missingEan: 0, missingCost: 0, fallbackNames: 0 };
+const stats = { imported: 0, skipped: 0, mergedDuplicates: 0, missingEan: 0, missingCost: 0, fallbackNames: 0, tfoParsed: 0, koffParsed: 0 };
 const seenSku = new Map();     // sku -> product id (merge duplicates)
 const usedEans = new Set();
 
@@ -112,6 +112,41 @@ function readSheetRows(ws) {
   });
 }
 
+// Pre-pass: read the workbook once and, for supplier-routed rows, re-parse
+// column O with the CURRENT parsers against the live (newest) brand/color
+// data — overriding the older brand/category/color values stored in the sheet.
+// This runs before the wipe so the parsers can see the existing brands/colors.
+const tfoParser = require('../parsers/tfo');
+const koffParser = require('../parsers/koff');
+const { buildDeviceIndex } = require('../parsers/devices');
+
+const workbook = XLSX.readFile(FILE);
+const sheets = [];
+const overrides = new Map(); // 'sheet:row' -> { brand, category, color }
+for (const [sheetIdx, sheetName] of workbook.SheetNames.entries()) {
+  const rows = readSheetRows(workbook.Sheets[sheetName]);
+  const cHeader = String(rows[0]?.[2] ?? '').toLowerCase();
+  const devicesInC = cHeader === 'device' || cHeader === 'devices';
+  sheets.push({ rows, devicesInC });
+  for (let i = 1; i < rows.length; i++) {
+    const name = code(rows[i][14]);
+    const supplierRaw = code(rows[i][15]);
+    if (!name || !supplierRaw) continue;
+    const sup = supplierRaw.toLowerCase();
+    if (sup.startsWith('telforceone')) {
+      const p = tfoParser.parseName(name, db);
+      overrides.set(`${sheetIdx}:${i}`, { brand: p.brand, category: p.category, color: p.color });
+      stats.tfoParsed++;
+    } else if (sup.startsWith('koff')) {
+      const koffIndex = buildDeviceIndex(db, s => String(s ?? '').trim().toLowerCase());
+      const p = koffParser.parseName(name, koffIndex);
+      // koff names carry brand and color segments but no category concept
+      overrides.set(`${sheetIdx}:${i}`, { brand: p.brand, category: null, color: p.color });
+      stats.koffParsed++;
+    }
+  }
+}
+
 const tx = db.transaction(() => {
   wipe();
 
@@ -121,25 +156,21 @@ const tx = db.transaction(() => {
   const insPD = db.prepare('INSERT OR IGNORE INTO product_devices (product_id, device_id) VALUES (?, ?)');
   const insPF = db.prepare('INSERT OR IGNORE INTO product_features (product_id, feature_id) VALUES (?, ?)');
 
-  const workbook = XLSX.readFile(FILE);
-  for (const sheetName of workbook.SheetNames) {
-    const rows = readSheetRows(workbook.Sheets[sheetName]);
-        // the "Stock" sheet keeps device names in column C; other sheets (e.g. "Other")
-    // store a short product name there instead — only parse C as devices when the
-    // header says so
-    const cHeader = String(rows[0]?.[2] ?? '').toLowerCase();
-    const devicesInC = cHeader === 'device' || cHeader === 'devices';
+  for (const [sheetIdx, { rows, devicesInC }] of sheets.entries()) {
     for (let i = 1; i < rows.length; i++) { // row 0 = headers
       const r = rows[i];
       const location = code(r[0]);
       const modelRaw = code(r[1]);
       const devicesRaw = devicesInC ? code(r[2]) : '';
-      const category = code(r[3]);
-      const brand = code(r[4]);
+      // supplier-routed rows override the sheet's brand/category/color with
+      // fresh parser output (computed in the pre-pass above)
+      const parsed = overrides.get(`${sheetIdx}:${i}`) || {};
+      const category = parsed.category || code(r[3]);
+      const brand = parsed.brand || code(r[4]);
       const eanRaw = code(r[5]);
       const sku = code(r[6]);
       const featuresRaw = code(r[7]);
-      const color = code(r[8]);
+      const color = parsed.color || code(r[8]);
       const quantity = parseInt(r[9], 10) || 0;
       const price = num(r[10]);
       const cost = num(r[12]);
@@ -215,6 +246,8 @@ console.log('  rows skipped (no SKU):', stats.skipped);
 console.log('  products with missing EAN:', stats.missingEan);
 console.log('  products with cost 0:', stats.missingCost);
 console.log('  fallback names generated:', stats.fallbackNames);
+console.log('  rows re-parsed via TFO logic:', stats.tfoParsed);
+console.log('  rows re-parsed via KOFF logic:', stats.koffParsed);
 console.log('  devices:', db.prepare('SELECT COUNT(*) n FROM devices').get().n);
 console.log('  features:', db.prepare('SELECT COUNT(*) n FROM features').get().n);
 console.log('  brands:', db.prepare('SELECT COUNT(*) n FROM brands').get().n);
