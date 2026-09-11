@@ -21,7 +21,7 @@ function attachRelations(products) {
   if (ids.length === 0) return products;
   const placeholders = ids.map(() => '?').join(',');
   const devices = db.prepare(`
-    SELECT pd.product_id, d.id, d.name, d.short_name, d.year FROM product_devices pd
+    SELECT pd.product_id, d.id, d.full_name, d.model, d.short_name, d.year FROM product_devices pd
     JOIN devices d ON d.id = pd.device_id WHERE pd.product_id IN (${placeholders})`).all(...ids);
   const features = db.prepare(`
     SELECT pf.product_id, f.id, f.name FROM product_features pf
@@ -29,7 +29,7 @@ function attachRelations(products) {
   const devMap = new Map(), featMap = new Map();
   for (const d of devices) {
     if (!devMap.has(d.product_id)) devMap.set(d.product_id, []);
-    devMap.get(d.product_id).push({ id: d.id, name: d.name, short_name: d.short_name, year: d.year });
+    devMap.get(d.product_id).push({ id: d.id, full_name: d.full_name, model: d.model, short_name: d.short_name, year: d.year });
   }
   for (const f of features) {
     if (!featMap.has(f.product_id)) featMap.set(f.product_id, []);
@@ -62,8 +62,8 @@ function diffProducts(before, after) {
     if (String(before[f] ?? '') !== String(after[f] ?? '')) changes[f] = { old: before[f], new: after[f] };
   }
   for (const [f, key] of [['devices', 'devices'], ['features', 'features']]) {
-    const a = before[key].map(x => x.name).sort().join(', ');
-    const b = after[key].map(x => x.name).sort().join(', ');
+    const a = before[key].map(x => x.full_name ?? x.name).sort().join(', ');
+    const b = after[key].map(x => x.full_name ?? x.name).sort().join(', ');
     if (a !== b) changes[f] = { old: a, new: b };
   }
   return changes;
@@ -105,7 +105,7 @@ router.get('/', (req, res) => {
     where.push(`EXISTS (
       SELECT 1 FROM product_devices pfd
       JOIN devices fd ON fd.id = pfd.device_id
-      WHERE pfd.product_id = p.id AND (fd.name = ? OR fd.short_name = ?)
+      WHERE pfd.product_id = p.id AND (fd.full_name = ? OR fd.model = ?)
     )`);
     params.push(deviceFilter, deviceFilter);
   }
@@ -127,7 +127,7 @@ router.get('/', (req, res) => {
       LOWER(COALESCE(b.name, '')) LIKE ? OR LOWER(COALESCE(c.name, '')) LIKE ? OR
       LOWER(COALESCE(s.name, '')) LIKE ? OR LOWER(COALESCE(l.name, '')) LIKE ? OR
       CAST(p.quantity AS TEXT) LIKE ? OR CAST(p.price AS TEXT) LIKE ? OR CAST(p.cost AS TEXT) LIKE ? OR
-      EXISTS (SELECT 1 FROM product_devices pdq JOIN devices dq ON dq.id = pdq.device_id WHERE pdq.product_id = p.id AND (LOWER(dq.name) LIKE ? OR LOWER(COALESCE(dq.short_name, '')) LIKE ?)) OR
+      EXISTS (SELECT 1 FROM product_devices pdq JOIN devices dq ON dq.id = pdq.device_id WHERE pdq.product_id = p.id AND (LOWER(dq.full_name) LIKE ? OR LOWER(COALESCE(dq.model, '')) LIKE ?)) OR
       EXISTS (SELECT 1 FROM product_features pfq JOIN features fq ON fq.id = pfq.feature_id WHERE pfq.product_id = p.id AND LOWER(fq.name) LIKE ?)
     )`);
     params.push(...Array(16).fill(pattern));

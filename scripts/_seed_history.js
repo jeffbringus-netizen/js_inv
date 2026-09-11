@@ -19,13 +19,13 @@ async function api(method, url, body) {
   const cat = await api('POST', '/api/entities/categories', { name: 'Headphones' });
   const loc = await api('POST', '/api/entities/locations', { name: 'Shelf A' });
   const sup = await api('POST', '/api/entities/suppliers', { name: 'acme-gmbh', full_name: 'Acme GmbH' });
-  const dev = await api('POST', '/api/entities/devices', { name: 'Pixel 9', year: 2024, short_name: 'P9' });
+  const dev = await api('POST', '/api/entities/devices', { brand: 'Test', series: 'Pixel', model: '9', year: 2024 });
   const feat = await api('POST', '/api/entities/features', { name: 'Waterproof' });
   const color = await api('POST', '/api/entities/colors', { name: 'Midnight Blue', tag_color: '#1a237e', tag_text: '#ffffff', tag_border: '#1a237e' });
 
   // ---------- entity updates (one per type) ----------
   await api('PUT', `/api/entities/brands/${brand.id}`, { price: 109 });
-  await api('PUT', `/api/entities/devices/${dev.id}`, { short_name: 'P9X' });
+  await api('PUT', `/api/entities/devices/${dev.id}`, { model: '9X' });
   await api('PUT', `/api/entities/features/${feat.id}`, { name: 'Waterproof IP67' });
   await api('PUT', `/api/entities/categories/${cat.id}`, { name: 'Headphones & Earbuds' });
   await api('PUT', `/api/entities/locations/${loc.id}`, { name: 'Shelf A1' });

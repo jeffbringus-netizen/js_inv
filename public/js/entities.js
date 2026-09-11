@@ -6,12 +6,16 @@ import { loadProducts } from './products.js';
 export const ENTITY_DEFS = {
   devices: {
     title: 'Devices', singular: 'device',
+    // full_name is composed by the backend from brand/series/model — never typed;
+    // short_name is a display-only override for product-table badges
     fields: [
-      { key: 'name', label: 'Name', type: 'text', required: true },
-      { key: 'short_name', label: 'Short name (used in product badges)', type: 'text' },
+      { key: 'brand', label: 'Brand', type: 'text', placeholder: 'Samsung' },
+      { key: 'series', label: 'Series', type: 'text', placeholder: 'Galaxy' },
+      { key: 'model', label: 'Model', type: 'text', placeholder: 'S23 Ultra' },
+      { key: 'short_name', label: 'Short name (badges)', type: 'text', placeholder: 'S23 Ultra' },
       { key: 'year', label: 'Year', type: 'number', required: true, default: new Date().getFullYear() }
     ],
-    columns: ['Name', 'Short name', 'Year']
+    columns: ['Name', 'Short', 'Year']
   },
   categories: {
     title: 'Categories', singular: 'category',
@@ -152,6 +156,24 @@ const entityModal = new bootstrap.Modal('#entityModal');
 let entityEditId = null;
 
 function entityModalFields() {
+  if (currentEntity === 'devices') {
+    // brand/series/model on one line; short name + year on the next row;
+    // full name is auto-generated from brand/series/model
+    const d = ENTITY_DEFS.devices;
+    const [brand, series, model, shortName, year] = d.fields;
+    const input = (f, width) => `
+      <div class="col-${width}">
+        <label class="form-label">${f.label}${f.required ? ' *' : ''}</label>
+        <input name="${f.key}" type="${f.type}" class="form-control" ${f.placeholder ? `placeholder="${f.placeholder}"` : ''} ${f.required ? 'required' : ''}>
+      </div>`;
+    return `
+      <div class="row g-2">${input(brand, 4)}${input(series, 4)}${input(model, 4)}</div>
+      <div class="row g-2 mt-1">${input(shortName, 4)}${input(year, 8)}</div>
+      <div class="col-12 mt-2">
+        <label class="form-label">Full name (auto-generated, must be unique)</label>
+        <input id="deviceFullNamePreview" class="form-control" readonly tabindex="-1">
+      </div>`;
+  }
   const fields = ENTITY_DEFS[currentEntity].fields.map(f => `
     <div class="col-12">
       <label class="form-label">${f.label}${f.required ? ' *' : ''}</label>
@@ -160,6 +182,14 @@ function entityModalFields() {
   return currentEntity === 'colors'
     ? fields + '<div class="col-12"><label class="form-label">Preview</label><div id="colorModalPreview" class="p-3 border rounded"><span class="badge">Color preview</span></div></div>'
     : fields;
+}
+
+function updateDeviceFullNamePreview() {
+  const form = $('#entityForm');
+  const preview = $('#deviceFullNamePreview');
+  if (!form || !preview || !form.brand) return;
+  preview.value = [form.brand.value, form.series.value, form.model.value]
+    .map(s => s.trim()).filter(Boolean).join(' ');
 }
 
 function openEntityModal(row = null) {
@@ -174,8 +204,46 @@ function openEntityModal(row = null) {
     const val = row ? row[f.key] : (f.default ?? '');
     form[f.key].value = val == null ? '' : val;
   }
+  if (currentEntity === 'devices' && row) {
+    const parts = decomposeDevice(row);
+    form.brand.value = parts.brand;
+    form.series.value = parts.series;
+    form.model.value = parts.model;
+  }
   if (currentEntity === 'colors') updateColorModalPreview();
+  if (currentEntity === 'devices') updateDeviceFullNamePreview();
   entityModal.show();
+}
+
+// Split a stored device into brand/series/model form values that compose back
+// to exactly the stored full name (never rewrites the name by accident).
+// Brand/series that are not actual prefixes of the name are dropped — the
+// unique name wins over enrichment fields.
+function decomposeDevice(row) {
+  const full = row.full_name || '';
+  const join = (b, s, m) => [b, s, m].map(x => String(x ?? '').trim()).filter(Boolean).join(' ');
+  if (row.model && join(row.brand, row.series, row.model) === full) {
+    return { brand: row.brand || '', series: row.series || '', model: row.model };
+  }
+  const stripPrefix = (text, prefix) => {
+    if (!prefix) return text;
+    const re = new RegExp('^' + String(prefix).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?: |$)', 'i');
+    return re.test(text) ? text.slice(prefix.length).trim() : null;
+  };
+  let brand = row.brand || '';
+  let series = row.series || '';
+  let rest = full;
+  if (brand != null && brand !== '') {
+    const stripped = stripPrefix(rest, brand);
+    if (stripped === null) brand = ''; else rest = stripped; // name does not contain the brand
+  }
+  if (series !== '') {
+    const stripped = stripPrefix(rest, series);
+    if (stripped === null) series = ''; else rest = stripped;
+  }
+  if (join(brand, series, rest) === full) return { brand, series, model: rest };
+  // no decomposition reproduces the name — keep it whole in the model field
+  return { brand: '', series: '', model: full };
 }
 
 function updateColorModalPreview() {
@@ -189,6 +257,7 @@ function updateColorModalPreview() {
 
 $('#entityForm').addEventListener('input', e => {
   if (currentEntity === 'colors' && ['tag_color', 'tag_text', 'tag_border'].includes(e.target.name)) updateColorModalPreview();
+  if (currentEntity === 'devices' && ['brand', 'series', 'model'].includes(e.target.name)) updateDeviceFullNamePreview();
 });
 
 $('#entityCreateBtn').addEventListener('click', () => openEntityModal());
@@ -315,4 +384,4 @@ $('#confirmDeleteBtn').addEventListener('click', async () => {
   toast(`Deleted "${pendingDelete.name}"`);
   loadEntities();
   loadProducts();
-});
+});

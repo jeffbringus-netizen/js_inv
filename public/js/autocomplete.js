@@ -50,9 +50,13 @@ export function createAutocomplete(container, type, onChange) {
     getSelected() { return state.selected; }
   };
 
+  // record label: devices attached to products carry full_name/model (no name
+  // alias — that exists only on entity-search API rows)
+  const recName = rec => rec?.full_name ?? rec?.name ?? '';
+
   function displayValue(rec) {
-    if (type === 'brands' && rec?.price != null) return `${rec.name} (${eur(rec.price)})`;
-    return rec?.name || '';
+    if (type === 'brands' && rec?.price != null) return `${recName(rec)} (${eur(rec.price)})`;
+    return recName(rec);
   }
 
   function renderBadges() {
@@ -68,7 +72,7 @@ export function createAutocomplete(container, type, onChange) {
       return;
     }
     badgeBox.innerHTML = state.selected.map((s, i) =>
-      `<span class="badge text-bg-primary">${esc(s.name)}<i class="bi bi-x-lg" data-i="${i}" style="cursor:pointer;margin-left:.3em"></i></span>`).join('');
+      `<span class="badge text-bg-primary">${esc(recName(s))}<i class="bi bi-x-lg" data-i="${i}" style="cursor:pointer;margin-left:.3em"></i></span>`).join('');
   }
 
   badgeBoxClick(container, i => { state.selected.splice(i, 1); renderBadges(); if (onChange) onChange(); });

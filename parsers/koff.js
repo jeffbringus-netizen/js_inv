@@ -1,4 +1,5 @@
 const XLSX = require('xlsx');
+const { buildDeviceIndex, matchDeviceSegments } = require('./devices');
 
 // Parse a KOFF purchase workbook into the common purchase-import row shape.
 function parse(data, db) {
@@ -15,19 +16,10 @@ function parse(data, db) {
   // raw: true keeps long EANs from being returned as scientific notation.
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
   const code = v => typeof v === 'number' ? String(v) : String(v ?? '').trim();
-  // devices match by full name OR short name ("Samsung Galaxy S22 / S23" hits
-  // "Samsung Galaxy S22" by name and "Samsung Galaxy S23" by short "S23");
-  // full names win when a short name would collide with another device's name
-  const deviceByLower = new Map();
-  for (const d of db.prepare('SELECT id, name, short_name FROM devices').all()) {
-    deviceByLower.set(d.name.toLowerCase(), { id: d.id, name: d.name });
-  }
-  for (const d of db.prepare('SELECT id, name, short_name FROM devices').all()) {
-    if (d.short_name) {
-      const key = d.short_name.toLowerCase();
-      if (!deviceByLower.has(key)) deviceByLower.set(key, { id: d.id, name: d.name });
-    }
-  }
+  // device matching is shared with the tfo parser: full name, then
+  // brand-scoped short names, then globally-unique shorts
+  const lower = s => String(s ?? '').trim().toLowerCase();
+  const deviceIndex = buildDeviceIndex(db, lower);
   const brandByName = new Map(db.prepare('SELECT id, name, price, cost FROM brands').all().map(b => [b.name, b]));
   const productBySku = new Map(
     db.prepare('SELECT * FROM products').all().map(p => [String(p.sku).toLowerCase(), p])
@@ -43,7 +35,7 @@ function parse(data, db) {
     const cost = parseFloat(String(row[6] ?? '').replace(',', '.')) || 0;
     if (!supplierName && !sku && !ean && !quantity) continue;
 
-    const parsedRow = parseName(supplierName, deviceByLower);
+    const parsedRow = parseName(supplierName, deviceIndex);
     if (parsedRow.color) {
       const color = db.prepare(`SELECT id, tag_color, tag_text, tag_border
         FROM colors WHERE LOWER(name) = LOWER(?)`).get(parsedRow.color);
@@ -71,7 +63,7 @@ function parse(data, db) {
 }
 
 // KOFF names use " - " segments: brand/product, devices, and color.
-function parseName(name, deviceByLower) {
+function parseName(name, deviceIndex) {
   const out = { brand: null, color: null, devices: [], name: null };
   const segments = String(name || '').split(' - ').map(s => s.trim()).filter(Boolean);
   if (segments.length === 0) return out;
@@ -82,15 +74,10 @@ function parseName(name, deviceByLower) {
 
   let devicesSegment = -1;
   if (segments.length >= 4) {
-    const matched = [];
-    const seenIds = new Set();
-    for (const part of segments[2].split('/').map(s => s.trim()).filter(Boolean)) {
-      const d = deviceByLower.get(part.toLowerCase());
-      // dedupe: full and short name may hit the same device
-      if (d && !seenIds.has(d.id)) { seenIds.add(d.id); matched.push(d); }
-    }
-    if (matched.length > 0) {
-      out.devices = matched;
+    const lower = s => String(s ?? '').trim().toLowerCase();
+    const matched = matchDeviceSegments(deviceIndex, segments[2].split('/'), lower);
+    if (matched.devices.length > 0) {
+      out.devices = matched.devices;
       devicesSegment = 2;
     }
   }

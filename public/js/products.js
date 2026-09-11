@@ -1,4 +1,4 @@
-import { $, esc, eur, eur4, paginationHtml, copyToClipboard } from './ui.js';
+import { $, esc, eur, eur4, paginationHtml, copyToClipboard, getJSON } from './ui.js';
 import { S, selectedProductIds } from './store.js';
 import { openMassEdit } from './mass-edit.js';
 import { openModal } from './product-modal.js';
@@ -22,7 +22,8 @@ export async function loadProducts() {
   });
   if (S.searchQuery) params.set('q', S.searchQuery);
   Object.entries(S.filters).forEach(([field, value]) => params.set(`filter_${field}`, value));
-  const result = await fetch('/api/products?' + params).then(r => r.json());
+  // getJSON surfaces server errors through the banner instead of failing silently
+  const result = await getJSON('/api/products?' + params);
   S.allProducts = result.items || [];
   S.productPageMeta = result;
   render();
@@ -30,7 +31,7 @@ export async function loadProducts() {
 }
 
 function filterMatches(p, field, value) {
-  if (field === 'device') return p.devices.some(d => d.name === value);
+  if (field === 'device') return p.devices.some(d => d.full_name === value);
   if (field === 'feature') return p.features.some(f => f.name === value);
   if (field === 'color') return p.color_name === value;
   return p[field] === value;
@@ -66,7 +67,7 @@ function render() {
       <td>
         <div>${hl(p.name)}</div>
         <div class="d-flex flex-wrap gap-1 mt-1">
-          ${p.devices.map(d => `<span class="badge text-bg-primary badge-click device-badge" data-filter="device" data-value="${esc(d.name)}"${S.filters.device === d.name ? '' : ` data-bs-toggle="tooltip" data-bs-placement="top" title="${esc(d.name)}"`}>${esc(d.short_name || d.name)}</span>`).join('')}
+          ${p.devices.map(d => `<span class="badge text-bg-primary badge-click device-badge" data-filter="device" data-value="${esc(d.full_name)}"${S.filters.device === d.full_name ? '' : ` data-bs-toggle="tooltip" data-bs-placement="top" title="${esc(d.full_name)}"`}>${esc(d.short_name || d.full_name)}</span>`).join('')}
         </div>
       </td>
       <td>${p.category ? colBadge('category', p.category) : ''}</td>

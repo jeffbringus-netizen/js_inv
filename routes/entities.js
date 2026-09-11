@@ -4,8 +4,14 @@ const { logHistory } = require('../db');
 
 const router = express.Router();
 
+// devices identify by full_name (composed from brand/series/model); every
+// other entity type uses a plain name column
+const NAME_COL = { devices: 'full_name' };
+const nameCol = type => NAME_COL[type] || 'name';
+const fullNameOf = (type, row) => row ? (row[nameCol(type)] ?? row.name) : '';
+
 const TYPES = {
-  devices: { table: 'devices', fields: ['name', 'year', 'short_name'], required: ['name', 'year'] },
+  devices: { table: 'devices', fields: ['full_name', 'year', 'model', 'brand', 'series', 'short_name'], required: ['year'] },
   features: { table: 'features', fields: ['name'], required: ['name'] },
   brands: { table: 'brands', fields: ['name', 'price', 'cost'], required: ['name'] },
   categories: { table: 'categories', fields: ['name'], required: ['name'] },
@@ -25,7 +31,7 @@ const COUNT_EXPR = {
 };
 
 const EDITABLE = {
-  devices: ['name', 'year', 'short_name'],
+  devices: ['full_name', 'year', 'model', 'brand', 'series', 'short_name'],
   features: ['name'],
   brands: ['name', 'price', 'cost'],
   categories: ['name'],
@@ -43,13 +49,17 @@ router.get('/:type', (req, res) => {
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 100));
   const countExpr = COUNT_EXPR[req.params.type] || '0';
-  let sql = `SELECT t.*, ${countExpr} AS product_count FROM ${t.table} t`;
+  const nc = nameCol(req.params.type);
+  // devices expose full_name AS name so shared consumers (autocomplete, lists)
+  // can treat every entity uniformly
+  const nameAlias = req.params.type === 'devices' ? `, t.full_name AS name` : '';
+  let sql = `SELECT t.*, ${countExpr} AS product_count${nameAlias} FROM ${t.table} t`;
   const params = [];
   if (q) {
     sql += ` WHERE ${t.fields.map(f => `t.${f} LIKE ?`).join(' OR ')}`;
     t.fields.forEach(() => params.push(`%${q}%`));
   }
-  sql += ' ORDER BY natural_key(t.name), t.name';
+  sql += ` ORDER BY natural_key(t.${nc}), t.${nc}`;
   if (!paginated) {
     if (!all) sql += ' LIMIT 20';
     res.json(db.prepare(sql).all(...params));
@@ -99,7 +109,7 @@ const LINKED_PRODUCTS = {
 router.get('/:type/:id/products', (req, res) => {
   const link = LINKED_PRODUCTS[req.params.type];
   if (!link) return res.status(404).json({ error: 'Unknown entity type' });
-  const entity = db.prepare(`SELECT id, name FROM ${TYPES[req.params.type].table} WHERE id = ?`).get(Number(req.params.id));
+  const entity = db.prepare(`SELECT id, ${nameCol(req.params.type)} AS name FROM ${TYPES[req.params.type].table} WHERE id = ?`).get(Number(req.params.id));
   if (!entity) return res.status(404).json({ error: 'Record not found' });
   res.json({ entity, products: db.prepare(link.list).all(entity.id) });
 });
@@ -110,7 +120,7 @@ router.delete('/:type/:id/products/:pid', (req, res) => {
   if (!link) return res.status(404).json({ error: 'Unknown entity type' });
   const info = link.unlink().run(Number(req.params.id), Number(req.params.pid));
   if (info.changes === 0) return res.status(404).json({ error: 'Product is not linked to this entity' });
-  const entity = db.prepare(`SELECT name FROM ${TYPES[req.params.type].table} WHERE id = ?`).get(Number(req.params.id));
+  const entity = db.prepare(`SELECT ${nameCol(req.params.type)} AS name FROM ${TYPES[req.params.type].table} WHERE id = ?`).get(Number(req.params.id));
   const removed = productById(Number(req.params.pid));
   if (entity && removed) {
     logHistory({
@@ -129,7 +139,7 @@ router.put('/:type/:id/products', (req, res) => {
   const type = req.params.type;
   if (type !== 'devices') return res.status(400).json({ error: 'Only devices support product sync' });
   const id = Number(req.params.id);
-  const entity = db.prepare('SELECT id, name FROM devices WHERE id = ?').get(id);
+  const entity = db.prepare('SELECT id, full_name AS name FROM devices WHERE id = ?').get(id);
   if (!entity) return res.status(404).json({ error: 'Record not found' });
   const add = Array.isArray(req.body.add) ? req.body.add.map(Number) : [];
   const remove = Array.isArray(req.body.remove) ? req.body.remove.map(Number) : [];
@@ -161,26 +171,48 @@ router.put('/:type/:id/products', (req, res) => {
 
 // PUT /api/entities/:type/:id — update editable fields
 router.put('/:type/:id', (req, res) => {
-  const t = TYPES[req.params.type];
-  const allowed = EDITABLE[req.params.type];
+  const type = req.params.type;
+  const t = TYPES[type];
+  const allowed = EDITABLE[type];
   if (!t || !allowed) return res.status(404).json({ error: 'Unknown entity type' });
-  const sets = [], vals = [];
-  for (const f of allowed) {
-    if (req.body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(req.body[f]); }
-  }
-  if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
-  vals.push(Number(req.params.id));
+  const nc = nameCol(type);
   try {
     const before = db.prepare(`SELECT * FROM ${t.table} WHERE id = ?`).get(Number(req.params.id));
     if (!before) return res.status(404).json({ error: 'Record not found' });
+    const body = { ...req.body };
+
+    // devices: the full name is composed from brand/series/model, never typed
+    if (type === 'devices') {
+      for (const f of ['brand', 'series', 'model', 'short_name']) {
+        if (body[f] !== undefined) body[f] = String(body[f]).trim();
+      }
+      if (['brand', 'series', 'model', 'full_name'].some(f => body[f] !== undefined)) {
+        const composite = [body.brand ?? before.brand, body.series ?? before.series, body.model ?? before.model]
+          .map(s => String(s ?? '').trim()).filter(Boolean).join(' ');
+        if (!composite) return res.status(400).json({ error: 'Full name (brand/series/model) cannot be empty' });
+        body.full_name = composite;
+        body.brand = body.brand ?? before.brand;
+        body.series = body.series ?? before.series;
+        body.model = body.model ?? before.model;
+      }
+    }
+
+    const sets = [], vals = [];
+    for (const f of allowed) {
+      if (body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(body[f]); }
+    }
+    if (sets.length === 0) return res.status(400).json({ error: 'Nothing to update' });
+    vals.push(Number(req.params.id));
+
     // case-insensitive uniqueness against OTHER records (own name may change case)
     const dupOf = (field, value) => value == null || value === '' ? null
       : db.prepare(`SELECT * FROM ${t.table} WHERE ${field} = ? COLLATE NOCASE AND id != ?`).get(value, Number(req.params.id));
-    const dup = dupOf('name', req.body.name !== undefined ? req.body.name : before.name)
-      || dupOf('full_name', req.body.full_name !== undefined ? req.body.full_name : before.full_name);
+    const newName = body[nc] !== undefined ? body[nc] : before[nc];
+    const dup = dupOf(nc, newName)
+      || (type === 'suppliers' && body.full_name !== undefined ? dupOf('full_name', body.full_name) : null);
     if (dup) {
       return res.status(409).json({
-        error: `${req.params.type.slice(0, -1)} "${dup.name}" already exists`,
+        error: `${type.slice(0, -1)} "${fullNameOf(type, dup)}" already exists`,
         existing: dup
       });
     }
@@ -192,7 +224,7 @@ router.put('/:type/:id', (req, res) => {
       if (String(before[f] ?? '') !== String(after[f] ?? '')) changes[f] = { old: before[f], new: after[f] };
     }
     if (Object.keys(changes).length) {
-      logHistory({ entity_type: req.params.type, entity_id: after.id, action: 'update', label: after.name, changes, snapshot: before });
+      logHistory({ entity_type: type, entity_id: after.id, action: 'update', label: fullNameOf(type, after), changes, snapshot: before });
     }
     res.json({ ok: true });
   } catch (e) {
@@ -228,7 +260,7 @@ router.delete('/:type/:id', (req, res) => {
       if (info.changes === 0) throw Object.assign(new Error('Record not found'), { status: 404 });
     })();
     logHistory({
-      entity_type: type, entity_id: id, action: 'delete', label: before.name,
+      entity_type: type, entity_id: id, action: 'delete', label: fullNameOf(type, before),
       snapshot: { ...before, product_count: countList.length, products: countList.slice(0, 50) }
     });
     res.json({ ok: true });
@@ -254,12 +286,30 @@ function linkedProductRows(type, id) {
   return db.prepare(linkListSql(type)).all(id);
 }
 
-router.post('/:type', (req, res) => {  const t = TYPES[req.params.type];
+router.post('/:type', (req, res) => {
+  const type = req.params.type;
+  const t = TYPES[type];
   if (!t) return res.status(404).json({ error: 'Unknown entity type' });
-  const body = req.body || {};
+  const nc = nameCol(type);
+  const body = { ...(req.body || {}) };
   for (const f of t.required) {
     if (body[f] === undefined || body[f] === null || body[f] === '') {
       return res.status(400).json({ error: `Missing required field: ${f}` });
+    }
+  }
+  // devices: compose the full name from brand/series/model (the autocomplete
+  // create-on-Enter path sends a ready full name in `name`)
+  if (type === 'devices') {
+    for (const f of ['brand', 'series', 'model', 'short_name']) {
+      if (body[f] !== undefined) body[f] = String(body[f]).trim();
+    }
+    if (!body.full_name && body.name) body.full_name = String(body.name).trim();
+    if (!body.full_name) {
+      body.full_name = [body.brand, body.series, body.model]
+        .map(s => String(s ?? '').trim()).filter(Boolean).join(' ');
+    }
+    if (!body.full_name) {
+      return res.status(400).json({ error: 'Full name (brand/series/model) is required' });
     }
   }
   const cols = [], vals = [];
@@ -267,24 +317,27 @@ router.post('/:type', (req, res) => {  const t = TYPES[req.params.type];
     if (body[f] !== undefined) { cols.push(f); vals.push(body[f]); }
   }
   // entity names are unique per type, case-insensitively ("Honor 400 lite" == "Honor 400 Lite")
-  const dup = db.prepare(`SELECT * FROM ${t.table} WHERE name = ? COLLATE NOCASE`).get(body.name)
-    || (body.full_name ? db.prepare(`SELECT * FROM ${t.table} WHERE full_name = ? COLLATE NOCASE`).get(body.full_name) : null);
+  let dup = db.prepare(`SELECT * FROM ${t.table} WHERE ${nc} = ? COLLATE NOCASE`).get(type === 'devices' ? body.full_name : body.name);
+  if (!dup && type === 'suppliers' && body.full_name) {
+    dup = db.prepare(`SELECT * FROM ${t.table} WHERE full_name = ? COLLATE NOCASE`).get(body.full_name);
+  }
   if (dup) {
     return res.status(409).json({
-      error: `${req.params.type.slice(0, -1)} "${dup.name}" already exists`,
+      error: `${type.slice(0, -1)} "${fullNameOf(type, dup)}" already exists`,
       existing: dup
     });
   }
   try {
     const info = db.prepare(`INSERT INTO ${t.table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...vals);
     const row = db.prepare(`SELECT * FROM ${t.table} WHERE id = ?`).get(info.lastInsertRowid);
-    logHistory({ entity_type: req.params.type, entity_id: row.id, action: 'create', label: row.name, snapshot: row });
+    logHistory({ entity_type: type, entity_id: row.id, action: 'create', label: fullNameOf(type, row), snapshot: row });
+    if (type === 'devices') row.name = row.full_name; // uniform shape for the autocomplete
     res.status(201).json(row);
   } catch (e) {
     if (e.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-      const existing = db.prepare(`SELECT * FROM ${t.table} WHERE name = ? COLLATE NOCASE`).get(body.name);
+      const existing = db.prepare(`SELECT * FROM ${t.table} WHERE ${nc} = ? COLLATE NOCASE`).get(type === 'devices' ? body.full_name : body.name);
       return res.status(409).json({
-        error: `${req.params.type.slice(0, -1)} "${existing ? existing.name : body.name}" already exists`,
+        error: `${type.slice(0, -1)} "${existing ? fullNameOf(type, existing) : fullNameOf(type, body)}" already exists`,
         existing: existing || null
       });
     }

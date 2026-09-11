@@ -243,7 +243,7 @@ function renderImportTables() {
     <td>
       <div>${esc(r.name)}</div>
       <div class="d-flex flex-wrap gap-1 mt-1">
-        ${r.devices.map(d => `<span class="badge text-bg-primary">${esc(d.name)}</span>`).join('')}
+        ${r.devices.map(d => `<span class="badge text-bg-primary">${esc(d.full_name)}</span>`).join('')}
         ${r.features.map(f => `<span class="badge text-bg-success">${esc(f.name)}</span>`).join('')}
       </div>
     </td>

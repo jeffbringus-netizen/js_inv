@@ -38,7 +38,8 @@ export function openMassEdit() {
 
 function currentMassValue(p) {
   if (massField === 'is_online') return p.is_online;
-  if (massField === 'devices' || massField === 'features') return (p[massField] || []).map(x => x.name);
+  // devices attached to products carry full_name (no name alias)
+  if (massField === 'devices' || massField === 'features') return (p[massField] || []).map(x => x.full_name ?? x.name);
   return p[massField.replace('_id', '')] ?? null;
 }
 

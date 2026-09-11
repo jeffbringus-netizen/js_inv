@@ -166,9 +166,9 @@ router.post('/complete', (req, res) => {
         linkPp.run(purchaseOrderId, info.lastInsertRowid, np.quantity, np.sort ?? 0, 1);
         const deviceIds = [...(np.device_ids || [])];
         for (const name of np.devices || []) {
-          const existing = db.prepare('SELECT id FROM devices WHERE name = ? COLLATE NOCASE').get(name);
+          const existing = db.prepare('SELECT id FROM devices WHERE full_name = ? COLLATE NOCASE').get(name);
           const deviceId = existing ? existing.id
-            : db.prepare('INSERT INTO devices (name, year) VALUES (?, ?)').run(name, new Date().getFullYear()).lastInsertRowid;
+            : db.prepare('INSERT INTO devices (full_name, year) VALUES (?, ?)').run(name, new Date().getFullYear()).lastInsertRowid;
           if (!existing) createdEntities.devices.push(name);
           deviceIds.push(deviceId);
         }

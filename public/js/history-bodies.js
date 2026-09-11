@@ -18,14 +18,15 @@ const HIST_ACTION_BADGE = {
 };
 export const HIST_ENTITY_TYPES = ['devices', 'features', 'brands', 'categories', 'locations', 'suppliers', 'colors'];
 export const HISTORY_FIELD_LABELS = {
-  model: 'Model', name: 'Name', ean: 'EAN', sku: 'SKU', color: 'Color', color_name: 'Color',
+  model: 'Model', short_name: 'Short name', name: 'Name', ean: 'EAN', sku: 'SKU', color: 'Color', color_name: 'Color',
   quantity: 'Quantity', price: 'Price', cost: 'Cost',
   supplier_name: "Supplier's product name", brand: 'Brand', category: 'Category',
   supplier: 'Supplier', location: 'Location', devices: 'Devices', features: 'Features',
   is_archived: 'Archived',
   customer: 'Customer', total: 'Total', status: 'Status', year: 'Year',
   full_name: 'Full name', products: 'Products', shipping: 'Shipping', is_online: 'Online',
-  note: 'Note', product_count: 'Product count', short_name: 'Short',
+  note: 'Note', product_count: 'Product count', model: 'Model',
+  brand: 'Brand', series: 'Series',
   brands: 'Brands', categories: 'Categories', locations: 'Locations', colors: 'Colors'
 };
 // product history modals reuse the products-table look: code badges with
@@ -59,7 +60,7 @@ function histProductFieldValue(key, v, snap) {
     case 'cost':
       return eur(v);
     case 'devices': case 'features':
-      return v.map(x => esc(x.name)).join(', ');
+      return v.map(x => esc(x.full_name ?? x.name)).join(', ');
     case 'is_online':
       return histToggle(v == 1 || v === '1' || v === true, 'online', 'offline');
     case 'is_archived':

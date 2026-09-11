@@ -47,9 +47,10 @@ const entityCache = new Map();
 function findOrCreate(table, name, extraCols = {}) {
   const key = `${table}:${name.toLowerCase()}`;
   if (entityCache.has(key)) return entityCache.get(key);
-  let row = db.prepare(`SELECT id FROM ${table} WHERE name = ?`).get(name);
+  const nameCol = table === 'devices' ? 'full_name' : 'name'; // devices identify by full_name
+  let row = db.prepare(`SELECT id FROM ${table} WHERE ${nameCol} = ?`).get(name);
   if (!row) {
-    const cols = ['name', ...Object.keys(extraCols)];
+    const cols = [nameCol, ...Object.keys(extraCols)];
     const vals = [name, ...Object.values(extraCols)];
     row = { id: db.prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...vals).lastInsertRowid };
   }
