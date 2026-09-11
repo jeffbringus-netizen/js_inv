@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { logHistory } = require('../db');
+const { decomposeDevice } = require('../device-parts');
 
 const router = express.Router();
 
@@ -304,6 +305,15 @@ router.post('/:type', (req, res) => {
       if (body[f] !== undefined) body[f] = String(body[f]).trim();
     }
     if (!body.full_name && body.name) body.full_name = String(body.name).trim();
+    // name-only create (typing a new device in a product modal): split it into
+    // brand/series/model with the shared rules; unknown names keep the typed
+    // value as the model
+    if (body.name && body.brand === undefined && body.series === undefined && body.model === undefined) {
+      const parts = decomposeDevice(body.name);
+      body.brand = parts.brand;
+      body.series = parts.series;
+      body.model = parts.model || body.name;
+    }
     if (!body.full_name) {
       body.full_name = [body.brand, body.series, body.model]
         .map(s => String(s ?? '').trim()).filter(Boolean).join(' ');

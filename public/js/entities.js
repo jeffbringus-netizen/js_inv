@@ -9,10 +9,10 @@ export const ENTITY_DEFS = {
     // full_name is composed by the backend from brand/series/model — never typed;
     // short_name is a display-only override for product-table badges
     fields: [
-      { key: 'brand', label: 'Brand', type: 'text', placeholder: 'Samsung' },
-      { key: 'series', label: 'Series', type: 'text', placeholder: 'Galaxy' },
-      { key: 'model', label: 'Model', type: 'text', placeholder: 'S23 Ultra' },
-      { key: 'short_name', label: 'Short name (badges)', type: 'text', placeholder: 'S23 Ultra' },
+      { key: 'brand', label: 'Brand', type: 'text', placeholder: '' },
+      { key: 'series', label: 'Series', type: 'text', placeholder: '' },
+      { key: 'model', label: 'Model', type: 'text', placeholder: '' },
+      { key: 'short_name', label: 'Short name (badges)', type: 'text', placeholder: '' },
       { key: 'year', label: 'Year', type: 'number', required: true, default: new Date().getFullYear() }
     ],
     columns: ['Name', 'Short', 'Year']

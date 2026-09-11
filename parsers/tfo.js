@@ -155,7 +155,7 @@ function parseName(originalName, db) {
   if (parsed.category === 'protector') {
     if (/\bblack\s+frame\b/i.test(source)) parsed.color = 'black frame';
     else if (/\b2,5d\b/i.test(source)) parsed.color = 'no frame';
-    else if (/\b(?:og\s+premium(?:\s+privacy)?|privacy|6d)\b/i.test(beforeCompatibility)) {
+    else if (/\b(?:og\s+premium(?:\s+privacy)?|ultra\s+strong|privacy|6d)\b/i.test(beforeCompatibility)) {
       parsed.color = 'black frame';
     }
   }

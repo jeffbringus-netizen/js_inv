@@ -58,6 +58,22 @@ function findOrCreate(table, name, extraCols = {}) {
   return row.id;
 }
 
+// devices are created decomposed: brand/series/model from the shared rules,
+// so import matching and the edit modal work out of the box
+const { decomposeDevice } = require('../device-parts');
+function findOrCreateDevice(name) {
+  const key = `devices:${name.toLowerCase()}`;
+  if (entityCache.has(key)) return entityCache.get(key);
+  let row = db.prepare('SELECT id FROM devices WHERE full_name = ?').get(name);
+  if (!row) {
+    const { brand, series, model } = decomposeDevice(name);
+    row = { id: db.prepare('INSERT INTO devices (full_name, brand, series, model, short_name, year) VALUES (?, ?, ?, ?, NULL, 0)')
+      .run(name, brand, series, model).lastInsertRowid };
+  }
+  entityCache.set(key, row.id);
+  return row.id;
+}
+
 const stats = { imported: 0, skipped: 0, mergedDuplicates: 0, missingEan: 0, missingCost: 0, fallbackNames: 0 };
 const seenSku = new Map();     // sku -> product id (merge duplicates)
 const usedEans = new Set();
@@ -177,7 +193,7 @@ const tx = db.transaction(() => {
 
       if (devicesRaw) {
         for (const d of devicesRaw.split('/').map(s => s.trim()).filter(Boolean)) {
-          insPD.run(pid, findOrCreate('devices', d, { year: 0 }));
+          insPD.run(pid, findOrCreateDevice(d));
         }
       }
       if (featuresRaw) {
