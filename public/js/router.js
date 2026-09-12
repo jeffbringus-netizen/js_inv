@@ -45,8 +45,8 @@ function selectView(view, updateUrl = true) {
   else if (view === 'history') loadHistory();
   else if (view === 'backups') loadBackups();
   else if (ENTITY_DEFS[view]) openEntityTab(view);
-  if (updateUrl && window.location.hash !== `#${view}`) {
-    window.history.pushState(null, '', `#${view}`);
+  if (updateUrl && window.location.pathname !== `/${view}`) {
+    window.history.pushState(null, '', `/${view}`);
   }
   if (window.innerWidth <= 767) {
     document.body.classList.remove('sidebar-visible');
@@ -55,11 +55,19 @@ function selectView(view, updateUrl = true) {
 }
 
 document.querySelectorAll('#mainTabs .nav-link').forEach(button => {
-  button.addEventListener('click', () => selectView(button.dataset.view));
+  button.addEventListener('click', event => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    selectView(button.dataset.view);
+  });
 });
 
 window.addEventListener('hashchange', () => {
   selectView(window.location.hash.slice(1), false);
+});
+
+window.addEventListener('popstate', () => {
+  selectView(window.location.pathname.slice(1) || 'products', false);
 });
 
 export { selectView };

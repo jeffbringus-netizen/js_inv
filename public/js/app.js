@@ -12,4 +12,4 @@ import './labels.js';
 $('#showArchived').checked = S.showArchived;
 $('#showMargin').checked = S.showMargin;
 loadProducts();
-selectView(window.location.hash.slice(1) || 'products', false);
+selectView(window.location.pathname.slice(1) || window.location.hash.slice(1) || 'products', false);

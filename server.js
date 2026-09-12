@@ -9,7 +9,7 @@ app.use(express.json());
 
 // Inject the UI configuration script into the HTML so version/configuration
 // values stay in a separate file instead of being hard-coded in index.html.
-app.get('/', (req, res) => {
+function sendApp(req, res) {
   const indexPath = path.join(__dirname, 'public', 'index.html');
   const html = fs.readFileSync(indexPath, 'utf8');
   const withConfig = html.replace(
@@ -17,7 +17,9 @@ app.get('/', (req, res) => {
     '  <script src="js/config.js"></script>\n</head>'
   );
   res.type('html').send(withConfig);
-});
+}
+
+app.get(['/', '/products', '/sales', '/purchases', '/locations', '/devices', '/categories', '/brands', '/suppliers', '/features', '/colors', '/backups', '/history', '/webstock', '/labels'], sendApp);
 
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders(res, filePath) {
