@@ -20,7 +20,8 @@ $('#generateLabelsBtn').addEventListener('click', async () => {
     const params = new URLSearchParams({
       link: linkTemplate,
       includeOutOfStock: $('#includeOutOfStock').checked ? '1' : '0',
-      includeLocation: $('#includeLocation').checked ? '1' : '0'
+      includeLocation: $('#includeLocation').checked ? '1' : '0',
+      includeSuggestedPrice: $('#includeSuggestedPrice').checked ? '1' : '0'
     });
     const response = await fetch('/api/admin/labels-xlsx?' + params.toString());
     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Could not generate labels');

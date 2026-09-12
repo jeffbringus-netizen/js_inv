@@ -3,18 +3,22 @@ const XLSX = require('xlsx');
 const db = require('../db');
 
 const router = express.Router();
+const formatLocation = location => String(location || '').replace(/([A-Za-z])(\d)\b/g, '$10$2');
 
 router.get('/labels-xlsx', (req, res) => {
   const linkTemplate = String(req.query.link || '').trim();
   const includeOutOfStock = req.query.includeOutOfStock === '1';
   const includeLocation = req.query.includeLocation === '1';
+  const includeSuggestedPrice = req.query.includeSuggestedPrice === '1';
   if (!linkTemplate) return res.status(400).json({ error: 'Link URL is required' });
 
   const products = db.prepare(`
     SELECT p.name, p.model, p.quantity, p.sku, s.full_name AS supplier_full_name,
-           ${includeLocation ? 'l.name AS location_name' : 'NULL AS location_name'}
+       ${includeLocation ? 'l.name AS location_name' : 'NULL AS location_name'},
+       ${includeSuggestedPrice ? 'b.price AS brand_suggested_price' : 'NULL AS brand_suggested_price'}
     FROM products p
     INNER JOIN suppliers s ON s.id = p.supplier_id
+     ${includeSuggestedPrice ? 'LEFT JOIN brands b ON b.id = p.brand_id' : ''}
     ${includeLocation ? 'LEFT JOIN locations l ON l.id = p.location_id' : ''}
     WHERE p.model IS NOT NULL AND p.model != ''
       AND p.is_archived = 0
@@ -34,19 +38,22 @@ router.get('/labels-xlsx', (req, res) => {
         ? linkTemplate.replaceAll('*', product.model)
         : linkTemplate + product.model
     };
-    if (includeLocation) row.Location = product.location_name || '';
+    if (includeLocation) row.Location = formatLocation(product.location_name);
+    if (includeSuggestedPrice) row['Brand suggested price'] = product.brand_suggested_price ?? '';
     return row;
   });
 
   const headers = ['Product name', 'Model', 'Quantity', 'SKU', 'Supplier full name', 'URL'];
   if (includeLocation) headers.push('Location');
+  if (includeSuggestedPrice) headers.push('Brand suggested price');
 
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
   sheet['!cols'] = [
     { wch: 42 }, { wch: 16 }, { wch: 10 },
     { wch: 18 }, { wch: 42 }, { wch: 58 },
-    ...(includeLocation ? [{ wch: 24 }] : [])
+    ...(includeLocation ? [{ wch: 24 }] : []),
+    ...(includeSuggestedPrice ? [{ wch: 24 }] : [])
   ];
   XLSX.utils.book_append_sheet(workbook, sheet, 'Labels');
   const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
