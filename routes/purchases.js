@@ -177,7 +177,7 @@ router.post('/complete', (req, res) => {
         for (const name of np.features || []) featureIds.push(findOrCreate('features', name, 'features'));
         for (const featureId of featureIds) linkFeat.run(info.lastInsertRowid, featureId);
         createdProducts.push({
-          model: np.model || null, name: np.name, sku: np.sku, ean: np.ean || null,
+          id: info.lastInsertRowid, model: np.model || null, name: np.name, sku: np.sku, ean: np.ean || null,
           quantity: np.quantity, price: np.price, cost: np.cost
         });
       }

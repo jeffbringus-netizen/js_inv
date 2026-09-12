@@ -2,10 +2,112 @@ import { $, esc, eur, eur4, paginationHtml, copyToClipboard, getJSON } from './u
 import { S, selectedProductIds } from './store.js';
 import { openMassEdit } from './mass-edit.js';
 import { openModal } from './product-modal.js';
+import { openHistoryInfo } from './history.js';
+import { HIST_TYPE_BADGE } from './history-bodies.js';
 
 const margin = p => p.cost ? Math.round((p.price / 1.2) / p.cost * 100) : null;
 const marginClass = m => m < 200 ? 'text-bg-danger' : m < 400 ? 'text-bg-warning' : m < 600 ? 'text-bg-success' : 'text-bg-primary';
 const qtyClass = q => q < 1 ? 'text-bg-danger' : q <= 2 ? 'text-bg-warning' : q <= 5 ? 'text-bg-success' : 'text-bg-primary';
+
+const productHistoryModal = new bootstrap.Modal('#productHistoryModal');
+let productHistoryId = null;
+let productHistoryRows = [];
+
+const productHistoryBadge = {
+  products: 'text-bg-primary', sales: 'text-bg-success', purchases: 'text-bg-info',
+  devices: 'text-bg-info', features: 'text-bg-success', brands: 'text-bg-warning',
+  categories: 'text-bg-secondary', suppliers: 'text-bg-secondary', locations: 'text-bg-dark', colors: 'text-bg-secondary'
+};
+
+function productHistoryEntityName(history) {
+  const value = history.changes?.name || history.changes?.full_name;
+  return value ? String(value.new ?? value.old ?? '') : history.label;
+}
+
+function productHistoryEntry(history) {
+  const snap = history.snapshot || {};
+  const item = Array.isArray(snap.items) ? snap.items.find(row => Number(row.product_id) === productHistoryId) : null;
+  if (history.entity_type === 'sales' && item) {
+    const action = history.action === 'complete' ? 'SOLD' : 'RETURNED';
+    return { badge: 'sales', action: `${action} — ${item.quantity} — ${item.name}`, description: `Order #${history.entity_id} · ${snap.customer || 'Walk-in'}` };
+  }
+  if (history.entity_type === 'purchases') {
+    const item = [...(snap.created || []), ...(snap.updated || [])].find(row => Number(row.id) === productHistoryId);
+    if (item) {
+      const quantity = item.quantity ?? item.add_quantity ?? 0;
+      return { badge: 'purchases', action: `BOUGHT — ${quantity} — ${item.name}`, description: `Order #${history.entity_id} · ${snap.supplier || 'Unknown supplier'}` };
+    }
+  }
+  if (history.entity_type === 'products') {
+    const changes = history.changes || {};
+    const relationChanges = Object.entries(changes).filter(([key]) => ['devices', 'features'].includes(key));
+    if (relationChanges.length) {
+      const linked = relationChanges.flatMap(([, change]) => {
+        const toValues = value => Array.isArray(value) ? value : String(value || '').split(',').map(item => item.trim()).filter(Boolean);
+        const oldValues = toValues(change.old);
+        const newValues = toValues(change.new);
+        const added = newValues.filter(value => !oldValues.includes(value)).map(value => `LINKED — ${value}`);
+        const removed = oldValues.filter(value => !newValues.includes(value)).map(value => `UNLINKED — ${value}`);
+        return [...added, ...removed];
+      });
+      if (linked.length) return { badge: 'products', action: linked.join(' / '), description: 'Product relationships updated' };
+    }
+    const fields = Object.keys(changes).filter(key => !['devices', 'features'].includes(key));
+    if (fields.length) {
+      const descriptions = fields.map(key => {
+        const change = changes[key];
+        return `${fmtProductHistoryValue(change.old)} → ${fmtProductHistoryValue(change.new)}`;
+      });
+      return { badge: 'products', action: `UPDATED — ${fields.map(key => ({ color_name: 'Color', price: 'Price', cost: 'Cost', quantity: 'Quantity', name: 'Name', model: 'Model', sku: 'SKU', ean: 'EAN', is_online: 'Online', is_archived: 'Archived', brand: 'Brand' }[key] || key)).join(' / ')}`, description: descriptions.join(' / ') };
+    }
+  }
+  if (['devices', 'features', 'brands', 'categories', 'suppliers', 'locations', 'colors'].includes(history.entity_type)) {
+    const entity = productHistoryEntityName(history);
+    if (history.action === 'delete') return { badge: history.entity_type, action: `DELETED — ${history.label}`, description: '' };
+    const linkAction = history.snapshot?.added?.some(row => Number(row.id) === productHistoryId)
+      ? 'LINKED' : history.snapshot?.removed?.some(row => Number(row.id) === productHistoryId) ? 'UNLINKED' : null;
+    if (linkAction) return { badge: history.entity_type, action: `${linkAction} — ${entity}`, description: '' };
+    const nameChange = history.changes?.name || history.changes?.full_name;
+    if (nameChange) return { badge: history.entity_type, action: `UPDATED — ${nameChange.new}`, description: `${nameChange.old} → ${nameChange.new}` };
+    return { badge: history.entity_type, action: `UPDATED — ${entity}`, description: '' };
+  }
+  return { badge: history.entity_type, action: history.action.toUpperCase(), description: history.label };
+}
+
+function fmtProductHistoryValue(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'object') return Array.isArray(value) ? value.join(', ') : JSON.stringify(value);
+  return String(value);
+}
+
+async function loadProductHistory() {
+  const type = $('#productHistoryFilter').value;
+  productHistoryRows = await fetch(`/api/history/product/${productHistoryId}?type=${type}`).then(r => r.json());
+  $('#productHistoryRows').innerHTML = productHistoryRows.map((history, index) => {
+    const entry = productHistoryEntry(history);
+    return `<tr>
+    <td><span class="badge ${productHistoryBadge[entry.badge] || HIST_TYPE_BADGE[history.entity_type] || 'text-bg-secondary'}">${esc(entry.badge)}</span></td>
+    <td class="text-nowrap">${esc(history.created_at)}</td>
+    <td><div><strong>${esc(entry.action)}</strong></div>${entry.description ? `<div class="small text-muted">${esc(entry.description)}</div>` : ''}</td>
+    <td><button class="btn btn-sm btn-outline-secondary product-history-info" data-index="${index}" title="More info"><i class="bi bi-eye"></i></button></td>
+  </tr>`;
+  }).join('') || '<tr><td colspan="4" class="text-muted text-center py-3">No history found.</td></tr>';
+}
+
+async function openProductHistory(id) {
+  productHistoryId = id;
+  const product = S.allProducts.find(item => item.id === id) || await fetch(`/api/products/${id}`).then(r => r.json());
+  const productLabel = product.model ? `${product.model} — ${product.name}` : product.name;
+  $('#productHistoryTitle').textContent = `${productLabel}`;
+  await loadProductHistory();
+  productHistoryModal.show();
+}
+
+$('#productHistoryFilter').addEventListener('change', loadProductHistory);
+$('#productHistoryRows').addEventListener('click', event => {
+  const button = event.target.closest('.product-history-info');
+  if (button) openHistoryInfo(productHistoryRows[Number(button.dataset.index)]);
+});
 
 function hl(text) {
   const s = String(text ?? '');
@@ -102,6 +204,9 @@ function render() {
         <button class="btn btn-sm btn-outline-secondary edit-btn" title="Edit">
           <i class="bi bi-pencil"></i>
         </button>
+        <button class="btn btn-sm btn-outline-secondary product-history-btn" title="Show product history">
+          <i class="bi bi-clock-history"></i>
+        </button>
       </td>
     </tr>`).join('');
 
@@ -175,6 +280,8 @@ $('#productRows').addEventListener('click', async e => {
   }
   const editBtn = e.target.closest('.edit-btn');
   if (editBtn) openModal(Number(editBtn.closest('tr').dataset.id));
+  const historyBtn = e.target.closest('.product-history-btn');
+  if (historyBtn) openProductHistory(Number(historyBtn.closest('tr').dataset.id));
 });
 
 $('#activeFilters').addEventListener('click', e => {

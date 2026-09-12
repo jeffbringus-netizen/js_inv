@@ -9,7 +9,7 @@ export async function loadHistory() {
   renderHistory();
 }
 
-function historyChangePreview(h) {
+export function historyChangePreview(h) {
   // purchase imports: summarize what the import brought in (imports store no changes)
   if (h.entity_type === 'purchases' && h.snapshot) {
     const parts = [];
@@ -68,7 +68,7 @@ function historyChangePreview(h) {
   return `<div class="small text-muted">${esc(label)}: <s>${esc(oldV)}</s> → ${esc(newV)}${extra}</div>`;
 }
 
-function histLabelHtml(h) {
+export function histLabelHtml(h) {
   const actionPrefix = h.action === 'create' ? '<strong>Created — </strong>'
     : h.action === 'delete' ? '<strong>Deleted — </strong>'
     : h.action === 'import' ? '<strong>Imported — </strong>'
@@ -125,7 +125,7 @@ function historySnapshotValue(v) {
   return esc(String(v));
 }
 
-function openHistoryInfo(h) {
+export function openHistoryInfo(h) {
   $('#historyInfoTitle').innerHTML =
     `<span class="badge ${HIST_TYPE_BADGE[h.entity_type] || 'text-bg-secondary'}">${h.entity_type}</span> ${histLabelHtml(h)}`;
   let body = `<div class="text-muted small mb-3">${esc(h.created_at)}</div>`;
@@ -221,4 +221,4 @@ function openHistoryInfo(h) {
   }
   $('#historyInfoBody').innerHTML = body;
   historyInfoModal.show();
-}
+}
