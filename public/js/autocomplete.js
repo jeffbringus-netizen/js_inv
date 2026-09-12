@@ -81,11 +81,13 @@ export function createAutocomplete(container, type, onChange) {
     const q = input.value.trim();
     if (!q) { listEl.classList.add('d-none'); return; }
     const rows = await fetch(`/api/entities/${type}?q=` + encodeURIComponent(q)).then(r => r.json());
-    const exact = rows.some(r => r.name.toLowerCase() === q.toLowerCase());
-    let html = rows.map((r, i) => `<div class="ac-item" data-i="${i}">${type === 'colors' ? `<span class="badge" style="background:${esc(r.tag_color)};color:${esc(r.tag_text)};border:1px solid ${esc(r.tag_border)}">${esc(r.name)}</span>` : esc(r.name)}${r.year ? ` <span class="text-muted small">(${r.year})</span>` : ''}${type === 'brands' && r.price != null ? ` <span class="text-muted small">(${esc(eur(r.price))})</span>` : ''}</div>`).join('');
-    if (!exact) html += `<div class="ac-hint">No match for "${esc(q)}" — press Enter to add</div>`;
+    const availableRows = cfg.multi ? rows.filter(r => !state.selected.some(s => s.id === r.id)) : rows;
+    const exact = availableRows.some(r => r.name.toLowerCase() === q.toLowerCase());
+    const selectedExact = state.selected.some(r => recName(r).toLowerCase() === q.toLowerCase());
+    let html = availableRows.map((r, i) => `<div class="ac-item" data-i="${i}">${type === 'colors' ? `<span class="badge" style="background:${esc(r.tag_color)};color:${esc(r.tag_text)};border:1px solid ${esc(r.tag_border)}">${esc(r.name)}</span>` : esc(r.name)}${r.year ? ` <span class="text-muted small">(${r.year})</span>` : ''}${type === 'brands' && r.price != null ? ` <span class="text-muted small">(${esc(eur(r.price))})</span>` : ''}</div>`).join('');
+    if (!exact && !selectedExact) html += `<div class="ac-hint">No match for "${esc(q)}" — press Enter to add</div>`;
     listEl.innerHTML = html;
-    listEl.rows = rows;
+    listEl.rows = availableRows;
     positionList();
     listEl.classList.remove('d-none');
   }
@@ -105,6 +107,7 @@ export function createAutocomplete(container, type, onChange) {
     if (!q) return;
     const exact = (listEl.rows || []).find(r => r.name.toLowerCase() === q.toLowerCase());
     if (exact) return select(exact);
+    if (state.selected.some(r => recName(r).toLowerCase() === q.toLowerCase())) return;
     // create new entity
     const body = { name: q };
     if (cfg.colorDefaults) {
@@ -172,4 +175,4 @@ function badgeBoxClick(container, onRemove) {
 export const acWidgets = {};
 document.querySelectorAll('[data-ac]').forEach(el => {
   acWidgets[el.dataset.ac] = createAutocomplete(el, el.dataset.ac);
-});
+});
