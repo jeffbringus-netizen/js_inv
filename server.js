@@ -6,6 +6,16 @@ require('./db'); // initialize schema
 
 const app = express();
 app.use(express.json());
+app.use('/api', (req, res, next) => {
+  const origin = req.get('Origin');
+  if (origin?.startsWith('chrome-extension://')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 
 // Inject the UI configuration script into the HTML so version/configuration
 // values stay in a separate file instead of being hard-coded in index.html.
