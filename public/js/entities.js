@@ -1,6 +1,7 @@
 import { $, esc, eur, toast, paginationHtml, copyToClipboard } from './ui.js';
 import { S } from './store.js';
 import { loadProducts } from './products.js';
+import { openModal } from './product-modal.js';
 
 // ---------- entities management (locations/devices/categories/brands/features) ----------
 export const ENTITY_DEFS = {
@@ -335,13 +336,19 @@ let entityProductsEntity = null;
 let entityProductsSortKey = 'name';
 let entityProductsSortDir = 1;
 let entityProducts = [];
+let reopenEntityProductsAfterEdit = false;
+
+async function refreshEntityProducts() {
+  if (!entityProductsEntity) return;
+  const data = await fetch(`/api/entities/${currentEntity}/${entityProductsEntity.id}/products`).then(r => r.json());
+  renderEntityProducts(data.products);
+}
 
 async function openEntityProducts(row) {
   entityProductsEntity = row;
-  const data = await fetch(`/api/entities/${currentEntity}/${row.id}/products`).then(r => r.json());
   const singular = ENTITY_DEFS[currentEntity].singular;
   $('#entityProductsTitle').textContent = `Products with ${singular} "${row.name}"`;
-  renderEntityProducts(data.products);
+  await refreshEntityProducts();
   entityProductsModal.show();
 }
 
@@ -375,7 +382,8 @@ function renderEntityProducts(products) {
     </td>
     <td><span class="badge ${qtyClass(p.quantity)}" title="Quantity in stock">${p.quantity}</span></td>
     <td>
-      <button class="btn btn-sm btn-outline-danger ep-remove" title="Remove from this product"><i class="bi bi-trash"></i></button>
+      <button class="btn btn-sm btn-outline-secondary ep-edit" title="Edit product"><i class="bi bi-pencil"></i></button>
+      <button class="btn btn-sm btn-outline-danger ep-remove" title="Unlink product"><i class="bi bi-x-lg"></i></button>
     </td>
   </tr>`).join('');
 }
@@ -395,20 +403,45 @@ $('#entityProductsRows').addEventListener('click', async e => {
     await copyToClipboard(code.textContent.trim());
     return;
   }
-  const btn = e.target.closest('.ep-remove');
-  if (!btn) return;
-  const pid = Number(btn.closest('tr').dataset.pid);
-  const res = await fetch(`/api/entities/${currentEntity}/${entityProductsEntity.id}/products/${pid}`, { method: 'DELETE' });
-  if (!res.ok) {
-    toast((await res.json().catch(() => ({}))).error || 'Remove failed');
+  const editBtn = e.target.closest('.ep-edit');
+  if (editBtn) {
+    const pid = Number(editBtn.closest('tr').dataset.pid);
+    reopenEntityProductsAfterEdit = true;
+    const productModalElement = $('#productModal');
+    productModalElement.addEventListener('show.bs.modal', () => {
+      productModalElement.style.zIndex = '1070';
+      requestAnimationFrame(() => {
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        backdrops[backdrops.length - 1]?.style.setProperty('z-index', '1065');
+      });
+    }, { once: true });
+    productModalElement.addEventListener('hidden.bs.modal', () => {
+      productModalElement.style.zIndex = '';
+      if (reopenEntityProductsAfterEdit) {
+        reopenEntityProductsAfterEdit = false;
+        refreshEntityProducts()
+          .then(() => entityProductsModal.show())
+          .catch(error => toast(error.message || 'Could not refresh linked products'));
+      }
+    }, { once: true });
+    openModal(pid).catch(error => {
+      reopenEntityProductsAfterEdit = false;
+      toast(error.message || 'Could not open product');
+    });
     return;
   }
-  toast(`Removed from product #${pid}`);
-  // refresh modal list, entity counts and products page
-  const data = await fetch(`/api/entities/${currentEntity}/${entityProductsEntity.id}/products`).then(r => r.json());
-  renderEntityProducts(data.products);
-  loadEntities();
-  loadProducts();
+  const unlinkBtn = e.target.closest('.ep-remove');
+  if (!unlinkBtn) return;
+  const productRow = unlinkBtn.closest('tr');
+  pendingUnlink = {
+    pid: Number(productRow.dataset.pid),
+    productName: productRow.querySelector('td:nth-child(2)')?.textContent.trim() || ''
+  };
+  $('#confirmDeleteTitle').textContent = 'Confirm unlink';
+  $('#confirmDeleteBtn').textContent = 'Unlink';
+  $('#confirmDeleteMsg').innerHTML =
+    `Unlink <strong>${esc(pendingUnlink.productName)}</strong> from this ${ENTITY_DEFS[currentEntity].singular}?`;
+  confirmDeleteModal.show();
 });
 
 $('#saveEntityBtn').addEventListener('click', async () => {
@@ -447,10 +480,21 @@ $('#saveEntityBtn').addEventListener('click', async () => {
 
 // entity delete with confirmation
 const confirmDeleteModal = new bootstrap.Modal('#confirmDeleteModal');
+const confirmDeleteElement = $('#confirmDeleteModal');
+confirmDeleteElement.addEventListener('show.bs.modal', () => {
+  confirmDeleteElement.style.zIndex = '1070';
+  requestAnimationFrame(() => {
+    const backdrops = document.querySelectorAll('.modal-backdrop');
+    backdrops[backdrops.length - 1]?.style.setProperty('z-index', '1065');
+  });
+});
 let pendingDelete = null;
+let pendingUnlink = null;
 
 function confirmDeleteEntity(row) {
   pendingDelete = row;
+  $('#confirmDeleteTitle').textContent = 'Confirm delete';
+  $('#confirmDeleteBtn').textContent = 'Delete';
   const unlinkMsg = {
     devices: 'It will be removed from all compatible products.',
     features: 'It will be removed from all products that have it.',
@@ -467,6 +511,22 @@ function confirmDeleteEntity(row) {
 }
 
 $('#confirmDeleteBtn').addEventListener('click', async () => {
+  if (pendingUnlink) {
+    const unlink = pendingUnlink;
+    pendingUnlink = null;
+    const res = await fetch(`/api/entities/${currentEntity}/${entityProductsEntity.id}/products/${unlink.pid}`, { method: 'DELETE' });
+    confirmDeleteModal.hide();
+    if (!res.ok) {
+      toast((await res.json().catch(() => ({}))).error || 'Unlink failed');
+      return;
+    }
+    toast(`Unlinked product #${unlink.pid}`);
+    const data = await fetch(`/api/entities/${currentEntity}/${entityProductsEntity.id}/products`).then(r => r.json());
+    renderEntityProducts(data.products);
+    loadEntities();
+    loadProducts();
+    return;
+  }
   const res = await fetch(`/api/entities/${currentEntity}/${pendingDelete.id}`, { method: 'DELETE' });
   confirmDeleteModal.hide();
   if (!res.ok) {

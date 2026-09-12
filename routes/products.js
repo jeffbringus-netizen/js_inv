@@ -379,4 +379,10 @@ router.get('/next-model', (req, res) => {
   res.json({ model: String(max + 1) });
 });
 
+router.get('/:id', (req, res) => {
+  const product = getFullProduct(Number(req.params.id));
+  if (!product) return res.status(404).json({ error: 'Product not found' });
+  res.json(product);
+});
+
 module.exports = router;

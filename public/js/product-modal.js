@@ -66,7 +66,10 @@ export async function openModal(id) {
 
   if (id) {
     $('#modalTitle').textContent = 'Edit product';
-    const p = S.allProducts.find(x => x.id === id);
+    const p = S.allProducts.find(x => x.id === id) || await fetch(`/api/products/${id}`).then(r => {
+      if (!r.ok) throw new Error('Product not found');
+      return r.json();
+    });
     form.model.value = p.model || '';
     if (!p.model) {
       try {
