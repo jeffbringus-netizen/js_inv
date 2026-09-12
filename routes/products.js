@@ -146,11 +146,14 @@ router.get('/', (req, res) => {
     return;
   }
   const total = db.prepare(`SELECT COUNT(*) AS count${fromSql}${whereSql}`).get(...params).count;
+  const archivedWhere = [...where.filter(condition => condition !== 'p.is_archived = 0'), 'p.is_archived = 1'];
+  const archivedWhereSql = ` WHERE ${archivedWhere.join(' AND ')}`;
+  const archivedTotal = db.prepare(`SELECT COUNT(*) AS count${fromSql}${archivedWhereSql}`).get(...params).count;
   const offset = (page - 1) * limit;
   const orderBy = `CASE WHEN (${sortExpression}) IS NULL THEN 1 ELSE 0 END ASC, ${sortExpression} ${sortDirection}, p.id ASC`;
   const products = db.prepare(`${SELECT_PRODUCTS}${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`)
     .all(...params, limit, offset);
-  res.json({ items: attachRelations(products), total, page, limit });
+  res.json({ items: attachRelations(products), total, archivedTotal, page, limit });
 });
 
 function saveRelations(productId, deviceIds, featureIds) {
