@@ -124,6 +124,7 @@ $('#saveProductBtn').addEventListener('click', async () => {
   body.category_id = acWidgets.categories.value;
   body.supplier_id = acWidgets.suppliers.value;
   body.location_id = acWidgets.locations.value;
+  body.color_id = acWidgets.colors.value;
   body.device_ids = acWidgets.devices.value;
   body.feature_ids = acWidgets.features.value;
   body.model = body.model || null;
