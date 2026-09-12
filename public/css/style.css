@@ -4,6 +4,7 @@
 .sortable::after { content: "\21C5"; opacity: .25; margin-left: .35em; }
 .sortable.asc::after { content: "\2191"; opacity: .8; }
 .sortable.desc::after { content: "\2193"; opacity: .8; }
+.money { white-space: nowrap; }
 .badge-click { cursor: pointer; }
 .ac { position: relative; }
 .ac-list {

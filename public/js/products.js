@@ -88,8 +88,8 @@ function render() {
         ? `<a class="badge ${qtyClass(p.quantity)} product-label-link" href="${esc(productLabelUrl(p.model))}" target="_blank" rel="noopener noreferrer" title="Open product label link">${p.quantity}</a>`
         : `<span class="badge ${qtyClass(p.quantity)}" title="Quantity in stock">${p.quantity}</span>`}</td>
       <td class="text-nowrap">
-        <div class="fw-bold">${eur(p.price)}</div>
-        <div class="small text-muted">${eur4(p.price / 1.2)}</div>
+        <div class="fw-bold money">${eur(p.price)}</div>
+        <div class="small text-muted money">${eur4(p.price / 1.2)}</div>
       </td>
       <td class="margin-cell">
         ${margin(p) === null
@@ -213,4 +213,4 @@ $('#showMargin').addEventListener('change', e => {
   localStorage.setItem('showMargin', S.showMargin ? '1' : '0');
   render();
 });
-$('#massEditBtn').addEventListener('click', openMassEdit);
+$('#massEditBtn').addEventListener('click', openMassEdit);

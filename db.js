@@ -94,7 +94,10 @@ CREATE TABLE IF NOT EXISTS sale_orders (
   customer TEXT,
   status_id INTEGER NOT NULL REFERENCES order_status(id),
   total REAL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT,
+  canceled_at TEXT
 );
 CREATE TABLE IF NOT EXISTS sale_products (
   order_id INTEGER NOT NULL REFERENCES sale_orders(id) ON DELETE CASCADE,
@@ -103,6 +106,12 @@ CREATE TABLE IF NOT EXISTS sale_products (
   PRIMARY KEY (order_id, product_id)
 );
 `);
+
+const saleOrderColumns = db.prepare('PRAGMA table_info(sale_orders)').all().map(column => column.name);
+if (!saleOrderColumns.includes('updated_at')) db.exec("ALTER TABLE sale_orders ADD COLUMN updated_at TEXT");
+if (!saleOrderColumns.includes('completed_at')) db.exec("ALTER TABLE sale_orders ADD COLUMN completed_at TEXT");
+if (!saleOrderColumns.includes('canceled_at')) db.exec("ALTER TABLE sale_orders ADD COLUMN canceled_at TEXT");
+db.exec("UPDATE sale_orders SET updated_at = COALESCE(updated_at, created_at) WHERE updated_at IS NULL");
 
 
 db.exec(`

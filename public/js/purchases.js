@@ -15,9 +15,9 @@ function renderPurchases() {
     <td>${po.id}</td>
     <td>${esc(po.supplier)}</td>
     <td>${po.item_count}</td>
-    <td class="fw-bold">${eur(po.total)}</td>
-    <td>${po.shipping == null ? '—' : eur(po.shipping)}</td>
-    <td>${eur(po.total + (po.shipping || 0))}</td>
+    <td class="fw-bold money">${eur(po.total)}</td>
+    <td class="money">${po.shipping == null ? '—' : eur(po.shipping)}</td>
+    <td class="money">${eur(po.total + (po.shipping || 0))}</td>
     <td>${esc(po.created_at)}</td>
     <td>
       <button class="btn btn-sm btn-outline-secondary po-info" title="Show products">
@@ -56,6 +56,7 @@ async function openPurchaseInfo(id) {
   $('#purchaseInfoProducts').textContent = eur(po.total);
   $('#purchaseInfoShipping').textContent = po.shipping == null ? '—' : eur(po.shipping);
   $('#purchaseInfoTotal').textContent = eur(po.total + (po.shipping || 0));
+  ['#purchaseInfoProducts', '#purchaseInfoShipping', '#purchaseInfoTotal'].forEach(selector => $(selector).classList.add('money'));
   purchaseInfoModal.show();
 }
 
@@ -523,4 +524,4 @@ $('#completeImportBtn').addEventListener('click', async () => {
     loadProducts();
     loadPurchases();
   } catch (e) { importError(e.message); }
-});
+});

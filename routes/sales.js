@@ -15,26 +15,31 @@ const ORDER_ITEMS = `
 
 function getOrder(id) {
   const order = db.prepare(`
-    SELECT o.id, o.customer, o.status_id, s.status, o.total, o.created_at,
+    SELECT o.id, o.customer, o.status_id, s.status, o.total, o.created_at, o.updated_at, o.completed_at, o.canceled_at,
       (SELECT COALESCE(SUM(p.price * op.quantity), 0) FROM sale_products op
         JOIN products p ON p.id = op.product_id WHERE op.order_id = o.id) AS live_total,
       (SELECT COALESCE(SUM(op.quantity), 0) FROM sale_products op WHERE op.order_id = o.id) AS item_count
     FROM sale_orders o JOIN order_status s ON s.id = o.status_id
     WHERE o.id = ?`).get(id);
-  if (order) order.created_at = toLocaltime(order.created_at);
+  if (order) {
+    for (const field of ['created_at', 'updated_at', 'completed_at', 'canceled_at']) order[field] = toLocaltime(order[field]);
+  }
   return order;
 }
 
 // GET /api/orders
 router.get('/', (req, res) => {
   const orders = db.prepare(`
-    SELECT o.id, o.customer, s.status, o.total, o.created_at,
+    SELECT o.id, o.customer, s.status, o.total, o.created_at, o.updated_at, o.completed_at, o.canceled_at,
       (SELECT COALESCE(SUM(p.price * op.quantity), 0) FROM sale_products op
         JOIN products p ON p.id = op.product_id WHERE op.order_id = o.id) AS live_total,
       (SELECT COALESCE(SUM(op.quantity), 0) FROM sale_products op WHERE op.order_id = o.id) AS item_count
     FROM sale_orders o JOIN order_status s ON s.id = o.status_id
     ORDER BY o.id DESC`).all();
-  res.json(orders.map(o => ({ ...o, created_at: toLocaltime(o.created_at) })));
+  res.json(orders.map(o => {
+    for (const field of ['created_at', 'updated_at', 'completed_at', 'canceled_at']) o[field] = toLocaltime(o[field]);
+    return o;
+  }));
 });
 
 // GET /api/orders/:id
@@ -69,17 +74,44 @@ router.post('/', (req, res) => {
   const items = req.body.items;
   const err = validateItems(items);
   if (err) return res.status(400).json({ error: err });
-  const id = db.transaction(() => {
-    const orderId = db.prepare('INSERT INTO sale_orders (customer, status_id) VALUES (?, ?)')
-      .run(req.body.customer || null, statusIds.draft).lastInsertRowid;
-    replaceItems(orderId, items);
-    return orderId;
-  })();
+  let completed = false;
+  let completedTotal = null;
+  let id;
+  try {
+    id = db.transaction(() => {
+      const orderId = db.prepare('INSERT INTO sale_orders (customer, status_id) VALUES (?, ?)')
+        .run(req.body.customer || null, statusIds.draft).lastInsertRowid;
+      replaceItems(orderId, items);
+      if (req.body.complete) {
+        const orderItems = db.prepare(ORDER_ITEMS).all(orderId);
+        for (const item of orderItems) {
+          if (item.quantity > item.stock) throw new Error(`Insufficient stock for "${item.name}" (have ${item.stock}, need ${item.quantity})`);
+        }
+        completedTotal = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const deduct = db.prepare('UPDATE products SET quantity = quantity - ? WHERE id = ?');
+        for (const item of orderItems) deduct.run(item.quantity, item.product_id);
+        db.prepare("UPDATE sale_orders SET status_id = ?, total = ?, updated_at = datetime('now'), completed_at = datetime('now') WHERE id = ?")
+          .run(statusIds.completed, completedTotal, orderId);
+        completed = true;
+      }
+      return orderId;
+    })();
+  } catch (e) {
+    return res.status(409).json({ error: e.message });
+  }
+  if (completed) {
+    logHistory({
+      entity_type: 'sales', entity_id: id, action: 'complete', label: `Sale order #${id}`,
+      changes: { status: { old: null, new: 'completed' }, total: { old: null, new: completedTotal } },
+      snapshot: { customer: req.body.customer || null, items: db.prepare(ORDER_ITEMS).all(id), total: completedTotal }
+    });
+    return res.status(201).json({ id, completed: true, total: completedTotal });
+  }
   logHistory({
     entity_type: 'sales', entity_id: id, action: 'create', label: `Sale order #${id}`,
     snapshot: { customer: req.body.customer || null, items: db.prepare(ORDER_ITEMS).all(id) }
   });
-  res.status(201).json({ id });
+  res.status(201).json({ id, completed: false });
 });
 
 // PUT /api/orders/:id  (draft only)
@@ -92,7 +124,7 @@ router.put('/:id', (req, res) => {
   if (err) return res.status(400).json({ error: err });
   const beforeItems = db.prepare(ORDER_ITEMS).all(order.id);
   db.transaction(() => {
-    db.prepare('UPDATE sale_orders SET customer = ? WHERE id = ?').run(req.body.customer || null, order.id);
+    db.prepare("UPDATE sale_orders SET customer = ?, updated_at = datetime('now') WHERE id = ?").run(req.body.customer || null, order.id);
     replaceItems(order.id, items);
   })();
   const afterItems = db.prepare(ORDER_ITEMS).all(order.id);
@@ -130,7 +162,7 @@ router.post('/:id/complete', (req, res) => {
       const deduct = db.prepare('UPDATE products SET quantity = quantity - ? WHERE id = ?');
       for (const it of items) deduct.run(it.quantity, it.product_id);
       const total = items.reduce((sum, it) => sum + it.price * it.quantity, 0);
-      db.prepare('UPDATE sale_orders SET status_id = ?, total = ? WHERE id = ?')
+      db.prepare("UPDATE sale_orders SET status_id = ?, total = ?, updated_at = datetime('now'), completed_at = datetime('now') WHERE id = ?")
         .run(statusIds.completed, total, order.id);
       order.items = items;
       order.total = total;
@@ -160,7 +192,7 @@ router.post('/:id/cancel', (req, res) => {
         for (const it of db.prepare(ORDER_ITEMS).all(order.id)) restore.run(it.quantity, it.product_id);
         restored = true;
       }
-      db.prepare('UPDATE sale_orders SET status_id = ? WHERE id = ?').run(statusIds.canceled, order.id);
+      db.prepare("UPDATE sale_orders SET status_id = ?, updated_at = datetime('now'), canceled_at = datetime('now') WHERE id = ?").run(statusIds.canceled, order.id);
       order.items = db.prepare(ORDER_ITEMS).all(order.id);
       order.restored = restored;
       return order;

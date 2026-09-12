@@ -56,7 +56,7 @@ function histProductFieldValue(key, v, snap) {
     case 'color_name':
       return histColorBadge(snap, v);
     case 'price':
-      return `<div class="fw-bold">${eur(v)}</div><div class="small text-muted">${eur4(v / 1.2)}</div>`;
+      return `<div class="fw-bold money">${eur(v)}</div><div class="small text-muted money">${eur4(v / 1.2)}</div>`;
     case 'cost':
       return eur(v);
     case 'devices': case 'features':
@@ -165,8 +165,8 @@ export function salesHistoryBody(h, snap) {
         <td>${wrap(esc(it.model || ''))}</td>
         <td>${name}<div class="small text-muted">${wrap(esc(it.sku || ''))}</div></td>
         <td>${wrap(it.quantity)}</td>
-        <td>${wrap(eur(it.price))}</td>
-        <td>${wrap(eur(it.price * it.quantity))}</td>
+        <td class="money">${wrap(eur(it.price))}</td>
+        <td class="money">${wrap(eur(it.price * it.quantity))}</td>
       </tr>`;
     }).join('');
     body += '<table class="table table-sm align-middle"><thead class="table-light"><tr>' +
@@ -176,7 +176,7 @@ export function salesHistoryBody(h, snap) {
     body += '<div class="text-muted">No items stored.</div>';
   }
   if (snap.total != null) {
-    body += `<div class="text-end fw-bold">Total: <span class="text-success">${eur(snap.total)}</span></div>`;
+    body += `<div class="text-end fw-bold money">Total: <span class="text-success">${eur(snap.total)}</span></div>`;
   }
   const extras = [];
   if (snap.stock_restored !== undefined) {
@@ -293,7 +293,7 @@ export function purchasesHistoryBody(h, snap) {
         <td>${esc(u.name)}<div class="small text-muted">${esc(u.sku)}</div></td>
         <td class="small">${u.fields && u.fields.supplier_name ? diff(u.fields.supplier_name) : plain(u.supplier_name)}</td>
         <td class="small">${u.fields && u.fields.ean ? diff(u.fields.ean) : plain(u.ean)}</td>
-        <td class="small">${u.fields && u.fields.cost ? diff(u.fields.cost, eur) : eur(u.cost)}</td>
+        <td class="small money">${u.fields && u.fields.cost ? diff(u.fields.cost, eur) : eur(u.cost)}</td>
         <td class="text-nowrap"><s class="text-muted">${u.old_quantity}</s> <i class="bi bi-arrow-right"></i> <strong>${u.old_quantity + u.add_quantity}</strong> <span class="badge text-bg-secondary">+${u.add_quantity}</span></td>
       </tr>`).join('');
     body += `<h6 class="mt-3 mb-1">Updated products</h6>
@@ -332,9 +332,9 @@ export function purchasesHistoryBody(h, snap) {
   }
   if (snap.total != null) {
     body += `<div class="text-end">
-      <div>Products: <span class="fw-bold">${eur(snap.total)}</span></div>
-      <div>Shipping: <span>${snap.shipping == null ? '—' : eur(snap.shipping)}</span></div>
-      <div class="fw-bold text-success">Total: ${eur(snap.total + (snap.shipping || 0))}</div>
+      <div class="money">Products: <span class="fw-bold">${eur(snap.total)}</span></div>
+      <div class="money">Shipping: <span>${snap.shipping == null ? '—' : eur(snap.shipping)}</span></div>
+      <div class="fw-bold text-success money">Total: ${eur(snap.total + (snap.shipping || 0))}</div>
     </div>`;
   }
   return body || '<div class="text-muted">No details stored.</div>';

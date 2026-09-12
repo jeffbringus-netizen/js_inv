@@ -1,4 +1,4 @@
-import { $, esc, eur, toast, paginationHtml, copyToClipboard } from './ui.js';
+import { $, esc, eur, eur4, toast, paginationHtml, copyToClipboard } from './ui.js';
 import { S } from './store.js';
 import { loadProducts } from './products.js';
 import { openModal } from './product-modal.js';
@@ -72,7 +72,8 @@ const ENTITY_COLUMNS = {
   ],
   brands: [
     { key: 'name', label: 'Name' }, { key: 'price', label: 'Suggested price' },
-    { key: 'cost', label: 'Cost' }, { key: 'product_count', label: 'Products' }
+    { key: 'cost', label: 'Cost' }, { key: 'margin', label: 'Margin' },
+    { key: 'product_count', label: 'Products' }
   ],
   suppliers: [
     { key: 'name', label: 'Name' }, { key: 'full_name', label: 'Full name' },
@@ -108,6 +109,8 @@ function entityHl(text) {
 }
 
 const qtyClass = q => q < 1 ? 'text-bg-danger' : q <= 2 ? 'text-bg-warning' : q <= 5 ? 'text-bg-success' : 'text-bg-primary';
+const brandMargin = row => row.cost && row.price != null ? Math.round((row.price / 1.2) / row.cost * 100) : null;
+const marginClass = margin => margin < 200 ? 'text-bg-danger' : margin < 400 ? 'text-bg-warning' : margin < 600 ? 'text-bg-success' : 'text-bg-primary';
 
 export function openEntityTab(type) {
   currentEntity = type;
@@ -136,9 +139,9 @@ function renderEntities() {
   const columns = ENTITY_COLUMNS[currentEntity];
   $('#entityTableHead').innerHTML = `<tr>${columns.map(c => `<th data-sort="${c.key}" class="sortable">${c.label}</th>`).join('')}<th style="width: 110px;">Actions</th></tr>`;
   entityRows.sort((left, right) => {
-    const leftValue = left[entitySortKey];
-    const rightValue = right[entitySortKey];
-    const numeric = ['year', 'price', 'cost', 'product_count'].includes(entitySortKey);
+    const leftValue = entitySortKey === 'margin' ? brandMargin(left) : left[entitySortKey];
+    const rightValue = entitySortKey === 'margin' ? brandMargin(right) : right[entitySortKey];
+    const numeric = ['year', 'price', 'cost', 'margin', 'product_count'].includes(entitySortKey);
     const comparison = numeric
       ? (Number(leftValue ?? -Infinity) - Number(rightValue ?? -Infinity))
       : String(leftValue ?? '').localeCompare(String(rightValue ?? ''), undefined, { numeric: true, sensitivity: 'base' });
@@ -154,15 +157,33 @@ function renderEntities() {
       : entityHl(r.name)}</td>
     ${currentEntity === 'colors' ? `<td>${esc(r.tag_color)}</td><td>${esc(r.tag_text)}</td><td>${esc(r.tag_border)}</td>` : ''}
     ${currentEntity === 'devices' ? `<td>${entityHl(r.short_name || '')}</td><td>${r.year}</td>` : ''}
-    ${currentEntity === 'brands' ? `<td class="text-nowrap">${r.price == null ? '—' : eur(r.price)}</td><td class="text-nowrap">${r.cost == null ? '—' : eur(r.cost)}</td>` : ''}
+    ${currentEntity === 'brands' ? `
+      <td class="text-nowrap">
+        <div class="fw-bold money">${r.price == null ? '—' : eur(r.price)}</div>
+        <div class="small text-muted money">${r.price == null ? '—' : eur4(r.price / 1.2)}</div>
+      </td>
+      <td class="text-nowrap">
+        <div class="fw-bold money">${r.cost == null ? '—' : eur(r.cost * 1.2)}</div>
+        <div class="small text-muted money">${r.cost == null ? '—' : eur4(r.cost)}</div>
+      </td>
+      <td class="margin-cell">
+        ${brandMargin(r) === null
+          ? '<span class="badge text-bg-light text-muted" title="No cost set">—</span>'
+          : `<span class="badge margin-badge ${marginClass(brandMargin(r))}"
+              data-bs-toggle="tooltip" data-bs-html="true"
+              title="<strong class='text-white'>${esc(eur(r.cost * 1.2))}</strong><br><span class='small text-white'>${esc(eur(r.cost))}</span>">${brandMargin(r)}%</span>`}
+      </td>` : ''}
     ${currentEntity === 'suppliers' ? `<td>${entityHl(r.full_name)}</td>` : ''}
     <td><span class="badge ${r.product_count > 0 ? 'text-bg-primary' : 'text-bg-light text-muted'}">${r.product_count}</span></td>
-    <td class="d-flex gap-1">
-      <button class="btn btn-sm btn-outline-secondary ent-info" title="Show linked products"><i class="bi bi-eye"></i></button>
-      <button class="btn btn-sm btn-outline-secondary ent-edit" title="Edit"><i class="bi bi-pencil"></i></button>
-      <button class="btn btn-sm btn-outline-danger ent-del" title="Delete"><i class="bi bi-trash"></i></button>
+    <td>
+      <div class="d-flex gap-1">
+        <button class="btn btn-sm btn-outline-secondary ent-info" title="Show linked products"><i class="bi bi-eye"></i></button>
+        <button class="btn btn-sm btn-outline-secondary ent-edit" title="Edit"><i class="bi bi-pencil"></i></button>
+        <button class="btn btn-sm btn-outline-danger ent-del" title="Delete"><i class="bi bi-trash"></i></button>
+      </div>
     </td>
   </tr>`).join('');
+  document.querySelectorAll('#entityRows .margin-badge').forEach(el => new bootstrap.Tooltip(el));
 }
 
 $('#entityTableHead').addEventListener('click', e => {
@@ -417,6 +438,7 @@ $('#entityProductsRows').addEventListener('click', async e => {
     }, { once: true });
     productModalElement.addEventListener('hidden.bs.modal', () => {
       productModalElement.style.zIndex = '';
+      document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.style.zIndex = '');
       if (reopenEntityProductsAfterEdit) {
         reopenEntityProductsAfterEdit = false;
         refreshEntityProducts()
@@ -487,6 +509,10 @@ confirmDeleteElement.addEventListener('show.bs.modal', () => {
     const backdrops = document.querySelectorAll('.modal-backdrop');
     backdrops[backdrops.length - 1]?.style.setProperty('z-index', '1065');
   });
+});
+confirmDeleteElement.addEventListener('hidden.bs.modal', () => {
+  confirmDeleteElement.style.zIndex = '';
+  document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.style.zIndex = '');
 });
 let pendingDelete = null;
 let pendingUnlink = null;

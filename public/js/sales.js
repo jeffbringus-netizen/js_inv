@@ -27,8 +27,8 @@ function renderOrders() {
       <td>${esc(o.customer || '')}</td>
       <td><span class="badge ${STATUS_BADGE[o.status] || 'text-bg-secondary'}">${o.status}</span></td>
       <td>${o.item_count}</td>
-      <td class="fw-bold">${eur(total)}</td>
-      <td>${esc(o.created_at)}</td>
+      <td class="fw-bold money">${eur(total)}</td>
+      <td>${esc(o.updated_at || o.created_at)}</td>
       <td class="d-flex gap-1">${actions.join('')}</td>
     </tr>`;
   }).join('');
@@ -98,11 +98,12 @@ function renderSaleItems() {
       <td>
         <input type="number" min="1" max="${it.stock}" step="1" value="${it.quantity}" class="form-control form-control-sm sale-qty" data-i="${i}" ${saleReadOnly ? 'disabled' : ''}>
       </td>
-      <td>${eur(it.price)}</td>
-      <td>${eur(it.price * it.quantity)}</td>
+      <td class="money">${eur(it.price)}</td>
+      <td class="money">${eur(it.price * it.quantity)}</td>
       <td>${saleReadOnly ? '' : `<button class="btn btn-sm btn-outline-danger sale-remove" data-i="${i}" title="Remove"><i class="bi bi-trash"></i></button>`}</td>
     </tr>`).join('');
   $('#saleTotal').textContent = eur(saleTotal());
+  $('#saleTotal').classList.add('money');
 }
 
 function addSaleItem(p) {
@@ -156,7 +157,7 @@ async function saleSearchList() {
         <div class="small text-muted">${esc(p.sku)}${p.model ? ' · ' + esc(p.model) : ''}</div>
       </span>
       <span class="text-end">
-        <div class="fw-bold">${eur(p.price)}</div>
+        <div class="fw-bold money">${eur(p.price)}</div>
         <div class="small text-muted">${p.quantity} in stock</div>
       </span>
     </div>`).join('') || '<div class="ac-hint">No products found</div>';
@@ -216,6 +217,11 @@ async function openSale(orderId = null, readOnly = false) {
     $('#saleModalTitle').textContent = `Sale order #${orderId}` + (readOnly ? '' : ' (draft)');
     const o = await fetch('/api/sale-orders/' + orderId).then(r => r.json());
     $('#saleCustomer').value = o.customer || '';
+    const timestamps = [
+      ['Created', o.created_at], ['Completed', o.completed_at], ['Canceled', o.canceled_at]
+    ].filter(([, value]) => value).map(([label, value]) => `<div><strong>${label}:</strong> ${esc(value)}</div>`).join('');
+    $('#saleTimestamps').innerHTML = timestamps;
+    $('#saleTimestamps').hidden = !timestamps;
     saleItems = o.items.map(it => ({
       product_id: it.product_id, name: it.name, model: it.model, sku: it.sku,
       price: it.price, quantity: it.quantity, stock: it.stock
@@ -224,6 +230,8 @@ async function openSale(orderId = null, readOnly = false) {
     $('#saleModalTitle').textContent = 'New sale';
     $('#saleCustomer').value = 'Walk-in';
     saleItems = [];
+    $('#saleTimestamps').hidden = true;
+    $('#saleTimestamps').innerHTML = '';
   }
   saleSnapshot = {
     customer: $('#saleCustomer').value.trim(),
@@ -279,8 +287,22 @@ $('#saleSaveDraftBtn').addEventListener('click', async () => {
 
 $('#saleCompleteBtn').addEventListener('click', async () => {
   try {
-    const id = await saveSaleOrder();
-    const res = await fetch(`/api/sale-orders/${id}/complete`, { method: 'POST' });
+    let id;
+    let res;
+    if (saleOrderId) {
+      id = await saveSaleOrder();
+      res = await fetch(`/api/sale-orders/${id}/complete`, { method: 'POST' });
+    } else {
+      res = await fetch('/api/sale-orders', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...salePayload(), complete: true })
+      });
+      if (res.ok) {
+        const result = await res.json();
+        id = result.id;
+        saleOrderId = id;
+      }
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Complete failed');
@@ -291,4 +313,4 @@ $('#saleCompleteBtn').addEventListener('click', async () => {
     loadProducts();
     loadOrders();
   } catch (e) { saleError(e.message); }
-});
+});
