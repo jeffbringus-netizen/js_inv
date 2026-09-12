@@ -75,33 +75,33 @@ router.get('/:type', (req, res) => {
 // linked products per entity type
 const LINKED_PRODUCTS = {
   devices: {
-    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity FROM products p
+    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity, p.is_online, p.is_archived FROM products p
            JOIN product_devices pd ON pd.product_id = p.id WHERE pd.device_id = ? ORDER BY p.name`,
     unlink: () => db.prepare('DELETE FROM product_devices WHERE device_id = ? AND product_id = ?')
   },
   features: {
-    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity FROM products p
+    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity, p.is_online, p.is_archived FROM products p
            JOIN product_features pf ON pf.product_id = p.id WHERE pf.feature_id = ? ORDER BY p.name`,
     unlink: () => db.prepare('DELETE FROM product_features WHERE feature_id = ? AND product_id = ?')
   },
   brands: {
-    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity FROM products p WHERE p.brand_id = ? ORDER BY p.name`,
+    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity, p.is_online, p.is_archived FROM products p WHERE p.brand_id = ? ORDER BY p.name`,
     unlink: () => db.prepare('UPDATE products SET brand_id = NULL WHERE brand_id = ? AND id = ?')
   },
   categories: {
-    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity FROM products p WHERE p.category_id = ? ORDER BY p.name`,
+    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity, p.is_online, p.is_archived FROM products p WHERE p.category_id = ? ORDER BY p.name`,
     unlink: () => db.prepare('UPDATE products SET category_id = NULL WHERE category_id = ? AND id = ?')
   },
   colors: {
-    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity FROM products p WHERE p.color_id = ? ORDER BY p.name`,
+    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity, p.is_online, p.is_archived FROM products p WHERE p.color_id = ? ORDER BY p.name`,
     unlink: () => db.prepare('UPDATE products SET color_id = NULL WHERE color_id = ? AND id = ?')
   },
   locations: {
-    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity FROM products p WHERE p.location_id = ? ORDER BY p.name`,
+    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity, p.is_online, p.is_archived FROM products p WHERE p.location_id = ? ORDER BY p.name`,
     unlink: () => db.prepare('UPDATE products SET location_id = NULL WHERE location_id = ? AND id = ?')
   },
   suppliers: {
-    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity FROM products p WHERE p.supplier_id = ? ORDER BY p.name`,
+    list: `SELECT p.id, p.model, p.name, p.sku, p.ean, p.quantity, p.is_online, p.is_archived FROM products p WHERE p.supplier_id = ? ORDER BY p.name`,
     unlink: () => db.prepare('UPDATE products SET supplier_id = NULL WHERE supplier_id = ? AND id = ?')
   }
 };

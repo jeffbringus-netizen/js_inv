@@ -1,7 +1,7 @@
 // Application UI configuration.
 // Change APP_VERSION when preparing the next application version/release.
 window.APP_CONFIG = {
-  APP_VERSION: 'v2.1.1'
+  APP_VERSION: 'v2.1.2'
 };
 
 // Render the application version without putting the value in HTML.

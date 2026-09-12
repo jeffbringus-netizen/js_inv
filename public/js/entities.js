@@ -1,4 +1,4 @@
-import { $, esc, eur, toast, paginationHtml } from './ui.js';
+import { $, esc, eur, toast, paginationHtml, copyToClipboard } from './ui.js';
 import { S } from './store.js';
 import { loadProducts } from './products.js';
 
@@ -61,10 +61,41 @@ export const ENTITY_DEFS = {
   }
 };
 
+const ENTITY_COLUMNS = {
+  devices: [
+    { key: 'name', label: 'Name' }, { key: 'short_name', label: 'Short' },
+    { key: 'year', label: 'Year' }, { key: 'product_count', label: 'Products' }
+  ],
+  categories: [
+    { key: 'name', label: 'Name' }, { key: 'product_count', label: 'Products' }
+  ],
+  brands: [
+    { key: 'name', label: 'Name' }, { key: 'price', label: 'Suggested price' },
+    { key: 'cost', label: 'Cost' }, { key: 'product_count', label: 'Products' }
+  ],
+  suppliers: [
+    { key: 'name', label: 'Name' }, { key: 'full_name', label: 'Full name' },
+    { key: 'product_count', label: 'Products' }
+  ],
+  locations: [
+    { key: 'name', label: 'Name' }, { key: 'product_count', label: 'Products' }
+  ],
+  features: [
+    { key: 'name', label: 'Name' }, { key: 'product_count', label: 'Products' }
+  ],
+  colors: [
+    { key: 'name', label: 'Name' }, { key: 'tag_color', label: 'Tag color' },
+    { key: 'tag_text', label: 'Tag text' }, { key: 'tag_border', label: 'Tag border' },
+    { key: 'product_count', label: 'Products' }
+  ]
+};
+
 let currentEntity = null;
 let entityRows = [];
 let entityPage = 1;
 let entityPageMeta = { total: 0, limit: 100 };
+let entitySortKey = 'name';
+let entitySortDir = 1;
 
 function entityHl(text) {
   const s = String(text ?? '');
@@ -75,9 +106,13 @@ function entityHl(text) {
   return esc(s.slice(0, idx)) + '<strong>' + esc(s.slice(idx, idx + q.length)) + '</strong>' + esc(s.slice(idx + q.length));
 }
 
+const qtyClass = q => q < 1 ? 'text-bg-danger' : q <= 2 ? 'text-bg-warning' : q <= 5 ? 'text-bg-success' : 'text-bg-primary';
+
 export function openEntityTab(type) {
   currentEntity = type;
   entityPage = 1;
+  entitySortKey = 'name';
+  entitySortDir = 1;
   $('#entityTitle').textContent = ENTITY_DEFS[type].title;
   $('#entitySearch').value = '';
   $('#entitySearchClear').hidden = true;
@@ -97,7 +132,21 @@ async function loadEntities() {
 
 function renderEntities() {
   const def = ENTITY_DEFS[currentEntity];
-  $('#entityTableHead').innerHTML = `<tr>${def.columns.map(c => `<th>${c}</th>`).join('')}<th>Products</th><th style="width: 110px;">Actions</th></tr>`;
+  const columns = ENTITY_COLUMNS[currentEntity];
+  $('#entityTableHead').innerHTML = `<tr>${columns.map(c => `<th data-sort="${c.key}" class="sortable">${c.label}</th>`).join('')}<th style="width: 110px;">Actions</th></tr>`;
+  entityRows.sort((left, right) => {
+    const leftValue = left[entitySortKey];
+    const rightValue = right[entitySortKey];
+    const numeric = ['year', 'price', 'cost', 'product_count'].includes(entitySortKey);
+    const comparison = numeric
+      ? (Number(leftValue ?? -Infinity) - Number(rightValue ?? -Infinity))
+      : String(leftValue ?? '').localeCompare(String(rightValue ?? ''), undefined, { numeric: true, sensitivity: 'base' });
+    return comparison * entitySortDir;
+  });
+  document.querySelectorAll('#entityTableHead th.sortable').forEach(th => {
+    th.classList.toggle('asc', th.dataset.sort === entitySortKey && entitySortDir === 1);
+    th.classList.toggle('desc', th.dataset.sort === entitySortKey && entitySortDir === -1);
+  });
   $('#entityRows').innerHTML = entityRows.map((r, i) => `<tr data-i="${i}">
     <td>${currentEntity === 'colors'
       ? `<span class="badge" style="background:${esc(r.tag_color)};color:${esc(r.tag_text)};border:1px solid ${esc(r.tag_border)}">${entityHl(r.name)}</span>`
@@ -114,6 +163,15 @@ function renderEntities() {
     </td>
   </tr>`).join('');
 }
+
+$('#entityTableHead').addEventListener('click', e => {
+  const header = e.target.closest('th.sortable');
+  if (!header) return;
+  const key = header.dataset.sort;
+  if (entitySortKey === key) entitySortDir *= -1;
+  else { entitySortKey = key; entitySortDir = 1; }
+  renderEntities();
+});
 
 function renderEntityPagination() {
   const html = paginationHtml(entityPageMeta, 'entities', 'entities');
@@ -274,6 +332,9 @@ $('#entityRows').addEventListener('click', e => {
 // linked products modal
 const entityProductsModal = new bootstrap.Modal('#entityProductsModal');
 let entityProductsEntity = null;
+let entityProductsSortKey = 'name';
+let entityProductsSortDir = 1;
+let entityProducts = [];
 
 async function openEntityProducts(row) {
   entityProductsEntity = row;
@@ -285,24 +346,55 @@ async function openEntityProducts(row) {
 }
 
 function renderEntityProducts(products) {
+  entityProducts = products;
   $('#entityProductsEmpty').hidden = products.length > 0;
-  $('#entityProductsRows').innerHTML = products.map(p => `<tr data-pid="${p.id}">
-    <td>${esc(p.model || '')}</td>
+  const sortedProducts = [...products].sort((left, right) => {
+    const leftValue = entityProductsSortKey === 'quantity'
+      ? Number(left.quantity) : entityProductsSortKey === 'sku'
+        ? `${left.sku || ''} ${left.ean || ''}` : left[entityProductsSortKey] || '';
+    const rightValue = entityProductsSortKey === 'quantity'
+      ? Number(right.quantity) : entityProductsSortKey === 'sku'
+        ? `${right.sku || ''} ${right.ean || ''}` : right[entityProductsSortKey] || '';
+    const comparison = entityProductsSortKey === 'quantity'
+      ? leftValue - rightValue
+      : String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' });
+    return comparison * entityProductsSortDir;
+  });
+  document.querySelectorAll('#entityProductsModal th.sortable').forEach(th => {
+    th.classList.remove('asc', 'desc');
+    if (th.dataset.sort === entityProductsSortKey) th.classList.add(entityProductsSortDir === 1 ? 'asc' : 'desc');
+  });
+  $('#entityProductsRows').innerHTML = sortedProducts.map(p => `<tr data-pid="${p.id}">
+    <td>${p.model ? `<span class="badge ${p.is_archived ? 'text-bg-danger' : p.is_online ? 'text-bg-success' : 'model-badge'} badge-click code-badge" title="Click to copy${p.is_online ? ' — online' : ''}${p.is_archived ? ' — archived' : ''}">${esc(p.model)}</span>` : ''}</td>
     <td>${esc(p.name)}</td>
     <td>
       <div class="d-flex flex-column gap-1 align-items-start">
-        <span class="badge text-bg-dark">${esc(p.sku)}</span>
-        <span class="badge text-bg-secondary">${esc(p.ean)}</span>
+        <span class="badge text-bg-dark badge-click code-badge" title="Click to copy">${esc(p.sku)}</span>
+        <span class="badge text-bg-secondary badge-click code-badge" title="Click to copy">${esc(p.ean)}</span>
       </div>
     </td>
-    <td>${p.quantity}</td>
+    <td><span class="badge ${qtyClass(p.quantity)}" title="Quantity in stock">${p.quantity}</span></td>
     <td>
       <button class="btn btn-sm btn-outline-danger ep-remove" title="Remove from this product"><i class="bi bi-trash"></i></button>
     </td>
   </tr>`).join('');
 }
 
+document.querySelectorAll('#entityProductsModal th.sortable').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (entityProductsSortKey === key) entityProductsSortDir *= -1;
+    else { entityProductsSortKey = key; entityProductsSortDir = 1; }
+    renderEntityProducts(entityProducts);
+  });
+});
+
 $('#entityProductsRows').addEventListener('click', async e => {
+  const code = e.target.closest('.code-badge');
+  if (code) {
+    await copyToClipboard(code.textContent.trim());
+    return;
+  }
   const btn = e.target.closest('.ep-remove');
   if (!btn) return;
   const pid = Number(btn.closest('tr').dataset.pid);
