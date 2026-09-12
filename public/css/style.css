@@ -150,3 +150,4 @@ body.sidebar-visible #appContent { width: calc(100% - 240px); margin-left: 240px
 #historyInfoBody .table:not(.table-bordered) tr:last-child > td { border-bottom: 0; }
 /* linked-products modal: no dangling divider after the last product row */
 #entityProductsModal .table tr:last-child > td { border-bottom: 0; }
+#productHistoryModal .table tr:last-child > td { border-bottom: 0; }

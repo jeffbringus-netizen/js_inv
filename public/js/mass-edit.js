@@ -10,7 +10,7 @@ let massField = null;
 let massValueWidget = null;
 
 const MASS_FIELDS = {
-  color: { label: 'Color', type: 'text' },
+  color_id: { label: 'Color', type: 'entity', entity: 'colors' },
   quantity: { label: 'Quantity', type: 'number', int: true },
   cost: { label: 'Purchase price', type: 'number', step: '0.01' },
   price: { label: 'Sale price', type: 'number', step: '0.01' },
@@ -40,6 +40,7 @@ function currentMassValue(p) {
   if (massField === 'is_online') return p.is_online;
   // devices attached to products carry full_name (no name alias)
   if (massField === 'devices' || massField === 'features') return (p[massField] || []).map(x => x.full_name ?? x.name);
+  if (massField === 'color_id') return p.color_name ?? null;
   return p[massField.replace('_id', '')] ?? null;
 }
 
@@ -205,4 +206,4 @@ async function saveMassEdit(closeAfter) {
 }
 
 $('#massSaveBtn').addEventListener('click', () => saveMassEdit(false));
-$('#massSaveCloseBtn').addEventListener('click', () => saveMassEdit(true));
+$('#massSaveCloseBtn').addEventListener('click', () => saveMassEdit(true));

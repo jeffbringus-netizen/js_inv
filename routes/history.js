@@ -10,8 +10,19 @@ function listContainsProduct(value, productId) {
   return Array.isArray(value) && value.some(item => Number(item?.id ?? item?.product_id) === productId);
 }
 
-function matchesHistory(row, productId, relatedToEntity) {
-  if (row.entity_type === 'products') return Number(row.entity_id) === productId;
+function listContainsProductLabel(value, product) {
+  if (!Array.isArray(value) || !product) return false;
+  const labels = new Set([
+    product.model ? `${product.model} — ${product.name}` : product.name,
+    product.name
+  ]);
+  return value.some(item => labels.has(item?.label) || labels.has(item?.name));
+}
+
+function matchesHistory(row, productId, product, relatedToEntity) {
+  if (row.entity_type === 'products') {
+    return Number(row.entity_id) === productId || listContainsProduct(row.snapshot?.before, productId) || listContainsProductLabel(row.snapshot?.before, product);
+  }
   if (row.entity_type === 'sales') {
     const realMovement = row.action === 'complete' || (row.action === 'cancel' && row.snapshot?.stock_restored === true);
     return realMovement && listContainsProduct(row.snapshot?.items, productId);
@@ -42,7 +53,7 @@ router.get('/product/:id', (req, res) => {
     ? db.prepare('SELECT * FROM history WHERE entity_type = ? ORDER BY id DESC LIMIT 500').all(type)
     : db.prepare('SELECT * FROM history ORDER BY id DESC LIMIT 500').all())
     .map(row => ({ ...row, changes: row.changes ? JSON.parse(row.changes) : null, snapshot: row.snapshot ? JSON.parse(row.snapshot) : null }))
-    .filter(row => matchesHistory(row, productId, relatedToEntity));
+    .filter(row => matchesHistory(row, productId, product, relatedToEntity));
   res.json(rows.map(row => ({ ...row, created_at: toLocaltime(row.created_at) })));
 });
 

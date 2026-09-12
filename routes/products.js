@@ -236,17 +236,28 @@ router.post('/mass-update', (req, res) => {
   const before = validIds.map(id => {
     const p = getFullProduct(id);
     return {
+      id: p.id,
       label: historyLabel(p),
       location: p.location, brand: p.brand, category: p.category, supplier: p.supplier,
       color: p.color_name,
       quantity: p.quantity, price: p.price, cost: p.cost, is_online: p.is_online, is_archived: p.is_archived,
-      devices: p.devices.map(d => d.name).join(', '), features: p.features.map(f => f.name).join(', ')
+      devices: p.devices.map(d => d.full_name ?? d.name).join(', '), features: p.features.map(f => f.name).join(', ')
     };
   });
 
   const TABLE_BY_KEY = {
     category_id: 'categories', brand_id: 'brands', supplier_id: 'suppliers', location_id: 'locations', color_id: 'colors'
   };
+  for (const [key, table] of Object.entries(TABLE_BY_KEY)) {
+    if (patch[key] !== undefined && patch[key] !== null && patch[key] !== '' && !db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(patch[key])) {
+      return res.status(400).json({ error: `Unknown ${key.replace('_id', '')}` });
+    }
+  }
+  for (const [key, table] of [['device_ids', 'devices'], ['feature_ids', 'features']]) {
+    if (!Array.isArray(req.body[key])) continue;
+    const unknown = req.body[key].find(id => !db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(id));
+    if (unknown !== undefined) return res.status(400).json({ error: `Unknown ${table.slice(0, -1)} id ${unknown}` });
+  }
   const entityName = (table, id) => {
     const row = db.prepare(`SELECT name FROM ${table} WHERE id = ?`).get(id);
     return row ? row.name : id;
@@ -263,7 +274,8 @@ router.post('/mass-update', (req, res) => {
     appliedCandidates[displayKey] = newVal;
   }
   const namesFor = (table, ids) => ids.map(id => {
-    const row = db.prepare(`SELECT name FROM ${table} WHERE id = ?`).get(id);
+    const displayColumn = table === 'devices' ? 'full_name' : 'name';
+    const row = db.prepare(`SELECT ${displayColumn} AS name FROM ${table} WHERE id = ?`).get(id);
     return row ? row.name : `#${id}`;
   }).sort().join(', ');
   if (hasDeviceIds) appliedCandidates.devices = namesFor('devices', req.body.device_ids);

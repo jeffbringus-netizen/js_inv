@@ -12,6 +12,7 @@ const qtyClass = q => q < 1 ? 'text-bg-danger' : q <= 2 ? 'text-bg-warning' : q 
 const productHistoryModal = new bootstrap.Modal('#productHistoryModal');
 let productHistoryId = null;
 let productHistoryRows = [];
+let productHistoryFilter = 'all';
 
 const productHistoryBadge = {
   products: 'text-bg-primary', sales: 'text-bg-success', purchases: 'text-bg-info',
@@ -40,6 +41,12 @@ function productHistoryEntry(history) {
   }
   if (history.entity_type === 'products') {
     const changes = history.changes || {};
+    if (history.entity_id === null && snap.applied) {
+      const fields = Object.keys(snap.applied);
+      const labels = fields.map(key => ({ color: 'Color', price: 'Price', cost: 'Cost', quantity: 'Quantity', brand: 'Brand', category: 'Category', supplier: 'Supplier', location: 'Location', devices: 'Devices', features: 'Features', is_online: 'Online', is_archived: 'Archived' }[key] || key));
+      const values = fields.map(key => fmtProductHistoryValue(snap.applied[key]));
+      return { badge: 'products', action: `MASS UPDATE — ${labels.join(' / ')}`, description: values.join(' / ') };
+    }
     const relationChanges = Object.entries(changes).filter(([key]) => ['devices', 'features'].includes(key));
     if (relationChanges.length) {
       const linked = relationChanges.flatMap(([, change]) => {
@@ -81,8 +88,7 @@ function fmtProductHistoryValue(value) {
 }
 
 async function loadProductHistory() {
-  const type = $('#productHistoryFilter').value;
-  productHistoryRows = await fetch(`/api/history/product/${productHistoryId}?type=${type}`).then(r => r.json());
+  productHistoryRows = await fetch(`/api/history/product/${productHistoryId}?type=${productHistoryFilter}`).then(r => r.json());
   $('#productHistoryRows').innerHTML = productHistoryRows.map((history, index) => {
     const entry = productHistoryEntry(history);
     return `<tr>
@@ -96,6 +102,9 @@ async function loadProductHistory() {
 
 async function openProductHistory(id) {
   productHistoryId = id;
+  productHistoryFilter = 'all';
+  $('#productHistoryFilterBtn').textContent = 'All';
+  document.querySelectorAll('#productHistoryFilterMenu .dropdown-item').forEach(item => item.classList.toggle('active', item.dataset.value === 'all'));
   const product = S.allProducts.find(item => item.id === id) || await fetch(`/api/products/${id}`).then(r => r.json());
   const productLabel = product.model ? `${product.model} — ${product.name}` : product.name;
   $('#productHistoryTitle').textContent = `${productLabel}`;
@@ -103,11 +112,39 @@ async function openProductHistory(id) {
   productHistoryModal.show();
 }
 
-$('#productHistoryFilter').addEventListener('change', loadProductHistory);
+$('#productHistoryFilterMenu').addEventListener('click', event => {
+  const option = event.target.closest('[data-value]');
+  if (!option) return;
+  productHistoryFilter = option.dataset.value;
+  $('#productHistoryFilterBtn').textContent = option.textContent;
+  document.querySelectorAll('#productHistoryFilterMenu .dropdown-item').forEach(item => item.classList.toggle('active', item === option));
+  loadProductHistory();
+});
 $('#productHistoryRows').addEventListener('click', event => {
   const button = event.target.closest('.product-history-info');
-  if (button) openHistoryInfo(productHistoryRows[Number(button.dataset.index)]);
+  if (!button) return;
+  const historyInfoElement = $('#historyInfoModal');
+  historyInfoElement.addEventListener('show.bs.modal', () => {
+    historyInfoElement.style.zIndex = '1070';
+    requestAnimationFrame(() => {
+      const backdrops = document.querySelectorAll('.modal-backdrop');
+      backdrops[backdrops.length - 1]?.style.setProperty('z-index', '1065');
+    });
+  }, { once: true });
+  historyInfoElement.addEventListener('hidden.bs.modal', () => {
+    historyInfoElement.style.zIndex = '';
+    document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.style.zIndex = '');
+  }, { once: true });
+  openHistoryInfo(productHistoryRows[Number(button.dataset.index)]);
 });
+
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  const historyInfoElement = $('#historyInfoModal');
+  if (!historyInfoElement.classList.contains('show')) return;
+  event.stopImmediatePropagation();
+  bootstrap.Modal.getInstance(historyInfoElement)?.hide();
+}, true);
 
 function hl(text) {
   const s = String(text ?? '');

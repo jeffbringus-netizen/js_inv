@@ -514,6 +514,14 @@ confirmDeleteElement.addEventListener('hidden.bs.modal', () => {
   confirmDeleteElement.style.zIndex = '';
   document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.style.zIndex = '');
 });
+
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  const nestedModal = [$('#productModal'), confirmDeleteElement].find(modal => modal.classList.contains('show'));
+  if (!nestedModal) return;
+  event.stopImmediatePropagation();
+  bootstrap.Modal.getInstance(nestedModal)?.hide();
+}, true);
 let pendingDelete = null;
 let pendingUnlink = null;
 
