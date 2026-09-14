@@ -182,9 +182,16 @@ function parseName(originalName, db) {
   // device matching is shared with the koff parser: full name, then
   // brand-scoped short names, then globally-unique shorts
   const deviceIndex = buildDeviceIndex(db, normalize);
-  const matchedDevices = matchDeviceSegments(deviceIndex, devices, normalize);
+  const deviceSegments = devices.map((device, index) => {
+    if (!/^\dG$/i.test(device) || index === 0) return device;
+    const previousDevice = deviceIndex.byName.get(normalize(devices[index - 1]));
+    if (!previousDevice) return device;
+    const variantDeviceName = previousDevice.full_name.replace(/\b\dG\b/i, device);
+    return deviceIndex.byName.has(normalize(variantDeviceName)) ? variantDeviceName : device;
+  });
+  const matchedDevices = matchDeviceSegments(deviceIndex, deviceSegments, normalize);
   parsed.devices.push(...matchedDevices.devices);
-  for (const deviceText of devices) {
+  for (const deviceText of deviceSegments) {
     if (!matchedDevices.matchedKeys.has(normalize(deviceText))) {
       parsed.compatible_devices.push(deviceText);
     }
