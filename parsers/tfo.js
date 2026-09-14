@@ -102,7 +102,7 @@ function parseName(originalName, db) {
   } else if (/\bcase\b/i.test(beforeFor)) {
     hasSpecialBrand = true;
     parsed.category = 'case';
-    parsed.brand = normalizeBrand(beforeFor);
+    parsed.brand = beforeFor.replace(/\s+case\s*$/i, '').trim();
     if (/^matt\s+tpu\s+case$/i.test(beforeFor)) parsed.brand = 'Matt TPU';
     parsed.name = parsed.brand;
   }
