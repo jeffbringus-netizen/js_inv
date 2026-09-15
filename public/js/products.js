@@ -149,9 +149,19 @@ document.addEventListener('keydown', event => {
 function hl(text) {
   const s = String(text ?? '');
   if (!S.searchQuery) return esc(s);
-  const idx = s.toLowerCase().indexOf(S.searchQuery.toLowerCase());
-  if (idx === -1) return esc(s);
-  return esc(s.slice(0, idx)) + '<strong>' + esc(s.slice(idx, idx + S.searchQuery.length)) + '</strong>' + esc(s.slice(idx + S.searchQuery.length));
+  const terms = S.searchQuery.split(/\s+/).filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!terms.length) return esc(s);
+  const matcher = new RegExp(terms.join('|'), 'gi');
+  let result = '';
+  let lastIndex = 0;
+  for (const match of s.matchAll(matcher)) {
+    result += esc(s.slice(lastIndex, match.index));
+    result += '<strong>' + esc(match[0]) + '</strong>';
+    lastIndex = match.index + match[0].length;
+  }
+  return result + esc(s.slice(lastIndex));
 }
 // ---------- data loading ----------
 export async function loadProducts() {

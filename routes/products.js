@@ -119,8 +119,8 @@ router.get('/', (req, res) => {
     params.push(featureFilter);
   }
   if (q) {
-    const pattern = `%${q}%`;
-    where.push(`(
+    const searchTerms = q.split(/\s+/).filter(Boolean);
+    const searchColumns = `
       LOWER(COALESCE(p.model, '')) LIKE ? OR LOWER(p.name) LIKE ? OR
       LOWER(COALESCE(p.ean, '')) LIKE ? OR LOWER(p.sku) LIKE ? OR
       LOWER(COALESCE(col.name, '')) LIKE ? OR LOWER(COALESCE(p.supplier_name, '')) LIKE ? OR
@@ -129,8 +129,9 @@ router.get('/', (req, res) => {
       CAST(p.quantity AS TEXT) LIKE ? OR CAST(p.price AS TEXT) LIKE ? OR CAST(p.cost AS TEXT) LIKE ? OR
       EXISTS (SELECT 1 FROM product_devices pdq JOIN devices dq ON dq.id = pdq.device_id WHERE pdq.product_id = p.id AND (LOWER(dq.full_name) LIKE ? OR LOWER(COALESCE(dq.model, '')) LIKE ?)) OR
       EXISTS (SELECT 1 FROM product_features pfq JOIN features fq ON fq.id = pfq.feature_id WHERE pfq.product_id = p.id AND LOWER(fq.name) LIKE ?)
-    )`);
-    params.push(...Array(16).fill(pattern));
+    `;
+    where.push(searchTerms.map(term => `(${searchColumns})`).join(' AND '));
+    for (const term of searchTerms) params.push(...Array(16).fill(`%${term}%`));
   }
   const whereSql = where.length ? ` WHERE ${where.join(' AND ')}` : '';
   const fromSql = ` FROM products p
