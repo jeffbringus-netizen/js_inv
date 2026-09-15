@@ -64,12 +64,19 @@ function parse(data, db) {
 
 // KOFF names use " - " segments: brand/product, devices, and color.
 function parseName(name, deviceIndex) {
-  const out = { brand: null, color: null, devices: [], name: null };
+  const out = { brand: null, category: null, color: null, devices: [], name: null };
   const segments = String(name || '').split(' - ').map(s => s.trim()).filter(Boolean);
   if (segments.length === 0) return out;
 
   const brandProduct = (segments[1] || '').split('/')[0].replace(/\s*\([^)]*\)\s*/g, '').trim();
   out.brand = segments.length > 1 ? `${segments[0]} - ${brandProduct}` : segments[0];
+  const productText = segments[1] || '';
+  if (/\bcamera\s+glass\b/i.test(productText)) out.category = 'camera';
+  else if (/(?:111D\s+Full\s+Cover|111D\s+Privacy|ESD\s+Glass|Full\s+Glue\s+Glass|Screen\s+Protector|Clear\s+Vision\s+Glass)/i.test(productText)) {
+    out.category = 'protector';
+  } else if (/(?:SoftFlex|Leather\s+Folio|Magskin\s+Book|CamShield|Clear\s+Silicone|Luxury\s+Crystal|Carbon\s+Silicone)/i.test(productText)) {
+    out.category = 'case';
+  }
   out.color = segments.length > 1 ? segments[segments.length - 1].toLowerCase() : null;
 
   let devicesSegment = -1;
