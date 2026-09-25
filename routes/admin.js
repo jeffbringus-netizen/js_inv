@@ -75,9 +75,10 @@ router.get('/labels-csv', (req, res) => {
 
   const sheet = XLSX.utils.json_to_sheet(data.rows, { header: data.headers });
   const csv = XLSX.utils.sheet_to_csv(sheet);
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  const csvBuffer = Buffer.concat([Buffer.from([0xFF, 0xFE]), Buffer.from(csv, 'utf16le')]);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-16le');
   res.setHeader('Content-Disposition', 'attachment; filename="product-labels.csv"');
-  res.send(csv);
+  res.send(csvBuffer);
 });
 
 module.exports = router;
