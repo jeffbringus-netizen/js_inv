@@ -5,12 +5,12 @@ const db = require('../db');
 const router = express.Router();
 const formatLocation = location => String(location || '').replace(/([A-Za-z])(\d)\b/g, '$10$2');
 
-router.get('/labels-xlsx', (req, res) => {
+function getLabelData(req) {
   const linkTemplate = String(req.query.link || '').trim();
   const includeOutOfStock = req.query.includeOutOfStock === '1';
   const includeLocation = req.query.includeLocation === '1';
   const includeSuggestedPrice = req.query.includeSuggestedPrice === '1';
-  if (!linkTemplate) return res.status(400).json({ error: 'Link URL is required' });
+  if (!linkTemplate) return { error: 'Link URL is required' };
 
   const products = db.prepare(`
     SELECT p.name, p.model, p.quantity, p.sku, s.full_name AS supplier_full_name,
@@ -47,19 +47,37 @@ router.get('/labels-xlsx', (req, res) => {
   if (includeLocation) headers.push('Location');
   if (includeSuggestedPrice) headers.push('Brand suggested price');
 
+  return { rows, headers, includeLocation, includeSuggestedPrice };
+}
+
+router.get('/labels-xlsx', (req, res) => {
+  const data = getLabelData(req);
+  if (data.error) return res.status(400).json(data);
+
   const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+  const sheet = XLSX.utils.json_to_sheet(data.rows, { header: data.headers });
   sheet['!cols'] = [
     { wch: 42 }, { wch: 16 }, { wch: 10 },
     { wch: 18 }, { wch: 42 }, { wch: 58 },
-    ...(includeLocation ? [{ wch: 24 }] : []),
-    ...(includeSuggestedPrice ? [{ wch: 24 }] : [])
+    ...(data.includeLocation ? [{ wch: 24 }] : []),
+    ...(data.includeSuggestedPrice ? [{ wch: 24 }] : [])
   ];
   XLSX.utils.book_append_sheet(workbook, sheet, 'Labels');
   const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', 'attachment; filename="product-labels.xlsx"');
   res.send(buffer);
+});
+
+router.get('/labels-csv', (req, res) => {
+  const data = getLabelData(req);
+  if (data.error) return res.status(400).json(data);
+
+  const sheet = XLSX.utils.json_to_sheet(data.rows, { header: data.headers });
+  const csv = XLSX.utils.sheet_to_csv(sheet);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="product-labels.csv"');
+  res.send(csv);
 });
 
 module.exports = router;

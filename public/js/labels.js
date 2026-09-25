@@ -4,8 +4,8 @@ $('#labelsLinkTemplate').addEventListener('input', e => {
   localStorage.setItem('labelsLinkTemplate', e.target.value);
 });
 
-$('#generateLabelsBtn').addEventListener('click', async () => {
-  const button = $('#generateLabelsBtn');
+async function downloadLabels(format) {
+  const button = $(`#generateLabels${format.toUpperCase()}Btn`);
   const status = $('#labelsStatus');
   const linkTemplate = $('#labelsLinkTemplate').value.trim();
   if (!linkTemplate) {
@@ -23,13 +23,13 @@ $('#generateLabelsBtn').addEventListener('click', async () => {
       includeLocation: $('#includeLocation').checked ? '1' : '0',
       includeSuggestedPrice: $('#includeSuggestedPrice').checked ? '1' : '0'
     });
-    const response = await fetch('/api/admin/labels-xlsx?' + params.toString());
+    const response = await fetch(`/api/admin/labels-${format}?` + params.toString());
     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Could not generate labels');
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'product-labels.xlsx';
+    anchor.download = `product-labels.${format}`;
     anchor.click();
     URL.revokeObjectURL(url);
     status.textContent = 'Downloaded.';
@@ -40,6 +40,9 @@ $('#generateLabelsBtn').addEventListener('click', async () => {
   } finally {
     button.disabled = false;
   }
-});
+}
+
+$('#generateLabelsXLSXBtn').addEventListener('click', () => downloadLabels('xlsx'));
+$('#generateLabelsCSVBtn').addEventListener('click', () => downloadLabels('csv'));
 const savedLabelsLinkTemplate = localStorage.getItem('labelsLinkTemplate');
 if (savedLabelsLinkTemplate !== null) $('#labelsLinkTemplate').value = savedLabelsLinkTemplate;
